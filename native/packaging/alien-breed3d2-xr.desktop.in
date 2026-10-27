@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Alien Breed 3D II XR
+Comment=The Killing Grounds with native OpenXR stereo and motion controls
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/alien-breed3d2-xr
+Icon=applications-games
+Terminal=false
+Categories=Game;ActionGame;
+StartupWMClass=alien-breed3d2-xr
+Actions=Desktop;XR;
+
+[Desktop Action Desktop]
+Name=Play on desktop
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/alien-breed3d2-xr --desktop
+
+[Desktop Action XR]
+Name=Play in XR
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/alien-breed3d2-xr --xr

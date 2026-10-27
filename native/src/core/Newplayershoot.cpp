@@ -1,6 +1,9 @@
+#include "controls.hpp"
+// Native tracked aim: original ammunition, delays, spread, damage and effects remain authoritative.
 #include "original.hpp"
 namespace Newplayershoot {
 void Plr1_Shot(){
+ab3d2::controls::AimScope trackedAim;
 Newplayershoot::plrShot(1);
 }
 
@@ -73,7 +76,7 @@ if((Mem::ub(j_add(a0,Defs::ObjT_TypeID_b)) == Defs::OBJ_TYPE_AUX)) {
 (skip=true);
 }
 else {
-int32_t v=Mem::ub(a1);
+int32_t v=p1&&ab3d2::controls::aimed()?(ab3d2::controls::intersects(a0)?255:0):Mem::ub(a1);
 (a1+=1);
 if((v == 0)) (skip=true);
 else {
@@ -87,6 +90,7 @@ else if((Mem::b(j_add(a0,Defs::EntT_HitPoints_b)) == 0)) (skip=true);
 else {
 int32_t d5=M68k::setw(0,Mem::uw(a0));
 int32_t d6b=M68k::setw(0,Mem::uw(j_add(a2,((d5 & 0xFFFF) * 2))));
+if(p1&&ab3d2::controls::aimed())d6b=ab3d2::controls::distance(a0);
 int32_t d2v=M68k::setw(0,Mem::uw(j_add(a0,4)));
 (d2v=int16_t(d2v));
 (d2v=j_shl(d2v,7));
@@ -96,7 +100,7 @@ if((d2v < 0)) (d2v=-(d2v));
 (d2v=M68k::muls(d2v,93));
 (d2v=j_shr(d2v,8));
 (d2v=j_shr(d2v,4));
-if((int16_t(d2v) > int16_t(d6b))) (skip=true);
+if(!(p1&&ab3d2::controls::aimed())&&(int16_t(d2v) > int16_t(d6b))) (skip=true);
 else if((int16_t(d1) < int16_t(d6b))) (skip=true);
 else {
 (d1=M68k::setw(d1,d6b));
@@ -194,6 +198,7 @@ int32_t dd1=M68k::setw(0,8);
 (dd2=M68k::setw(dd2,j_shr(int16_t(dd2),(dd1 & 31))));
 Mem::ww(NewanimsData::bulyspd,dd2);
 }
+if(p==1&&ab3d2::controls::aimed())Mem::ww(NewanimsData::bulyspd,ab3d2::controls::verticalSpeed(Mem::uw(NewplayershootData::BulletSpd)));
 if((Mem::w(j_add(j_add(a5,Defs::BulT_IsHitScan_l),2)) == 0)) {
 Newplayershoot::fireProjectile(p,a5,a6);
 return ;
@@ -228,6 +233,7 @@ int32_t d1=M68k::setw(0,8);
 (d1=M68k::setw(d1,(d1 - Mem::uw(NewplayershootData::BulletSpd))));
 (d0=M68k::setw(d0,j_shr(int16_t(d0),(d1 & 31))));
 Mem::ww(NewanimsData::bulyspd,d0);
+if(p==1&&ab3d2::controls::aimed())Mem::ww(NewanimsData::bulyspd,ab3d2::controls::verticalSpeed(Mem::uw(NewplayershootData::BulletSpd)));
 if((Mem::w(j_add(j_add(a5,Defs::BulT_IsHitScan_l),2)) == 0)) {
 Newplayershoot::fireProjectile(p,a5,a6);
 return ;
@@ -245,6 +251,7 @@ Mem::ww(ObjectmoveData::newx,d0);
 Mem::ww(ObjectmoveData::newz,d0);
 int32_t d0l=Mem::l(yoff);
 (d0l=j_add(d0l,(10 * 128)));
+if(p==1&&ab3d2::controls::aimed())d0l=ab3d2::controls::originY();
 Mem::wl(ObjectmoveData::oldy,d0l);
 int32_t d1l=d0l;
 (d0l=Objectmove::GetRand());
@@ -252,9 +259,10 @@ int32_t d1l=d0l;
 (d0l=M68k::setw(d0l,(d0l - 0x800)));
 (d0l=int16_t(d0l));
 (d1l=j_add(d1l,d0l));
+if(p==1&&ab3d2::controls::aimed())d1l=Mem::l(ObjectmoveData::oldy)+ab3d2::controls::rayYStep();
 Mem::wl(ObjectmoveData::newy,d1l);
 Newplayershoot::setupBulletMove(zonePtr);
-while(true){
+while(!(p==1&&ab3d2::controls::verticalRay())){
 Objectmove::MoveObject();
 if((Mem::b(ObjectmoveData::hitwall) != 0)) break;
 Newplayershoot::advanceMove();
@@ -307,8 +315,10 @@ Mem::ww(j_add(a0,Defs::ShotT_Gravity_w),Mem::uw(j_add(j_add(a5,Defs::BulT_Gravit
 Mem::wb(j_add(a0,Defs::ShotT_Flags_w),Mem::ub(j_add(j_add(a5,Defs::BulT_BounceHoriz_l),3)));
 Mem::wb(j_add(j_add(a0,Defs::ShotT_Flags_w),1),Mem::ub(j_add(j_add(a5,Defs::BulT_BounceVert_l),3)));
 int32_t d0=M68k::setw(0,Mem::uw(NewanimsData::bulyspd));
+if(!(p==1&&ab3d2::controls::aimed())){
 if((int16_t(d0) >= (20 * 128))) (d0=M68k::setw(d0,(20 * 128)));
 if((int16_t(d0) <= (-(20) * 128))) (d0=M68k::setw(d0,(-(20) * 128)));
+}
 Mem::ww(NewanimsData::bulyspd,d0);
 Mem::wb(j_add(a0,Defs::ShotT_Size_b),Mem::ub(j_add(NewplayershootData::BULTYPE,1)));
 Mem::wb(j_add(a0,Defs::ShotT_Power_w),Mem::ub(j_add(j_add(a5,Defs::BulT_HitDamage_l),3)));
@@ -332,6 +342,11 @@ Mem::wl(j_add(a0,Defs::ShotT_VelocityX_w),d0);
 (d2=j_shl(d2,(d1b & 31)));
 Mem::wb(j_add(a0,Defs::ObjT_TypeID_b),Defs::OBJ_TYPE_PROJECTILE);
 Mem::wl(j_add(a0,Defs::ShotT_VelocityZ_w),d2);
+if(p==1&&ab3d2::controls::aimed()){
+ float horizontal=std::sqrt(std::max(0.f,1-ab3d2::controls::input.direction[1]*ab3d2::controls::input.direction[1]));
+ Mem::wl(a0+Defs::ShotT_VelocityX_w,int(std::lround(Mem::l(a0+Defs::ShotT_VelocityX_w)*horizontal)));
+ Mem::wl(a0+Defs::ShotT_VelocityZ_w,int(std::lround(Mem::l(a0+Defs::ShotT_VelocityZ_w)*horizontal)));
+}
 Mem::ww(j_add(a0,Defs::ShotT_VelocityY_w),Mem::uw(NewanimsData::bulyspd));
 Mem::wb(j_add(a0,Defs::ShotT_InUpperZone_b),Mem::ub(NewplayershootData::tempStoodInTop));
 Mem::ww(j_add(a0,Defs::ShotT_Lifetime_w),0);

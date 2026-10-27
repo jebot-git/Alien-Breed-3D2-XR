@@ -13,3 +13,7 @@ ab3d2_source/listing.txt
 /build/
 /build-native/
 /.gradle/
+
+/native/tools/__pycache__/
+
+/native/render/tests/__pycache__/

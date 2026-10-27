@@ -1,3 +1,5 @@
+#include "controls.hpp"
+// Native tracked input: original movement/friction/gravity/collision remain authoritative.
 #include "original.hpp"
 namespace Player {
 void Plr_Initialise(){
@@ -190,6 +192,7 @@ if((nb != 0)) {
 Mem::wl(j_add(a0,Defs::PlrT_SnapTargHeight_l),Hires::PLR_CROUCH_HEIGHT);
 }
 }
+ab3d2::controls::crouch(a0);
 (a4=Mem::l(j_add(a0,Defs::PlrT_ZonePtr_l)));
 (d0=Mem::l(j_add(a4,Defs::ZoneT_Floor_l)));
 (d0-=Mem::l(j_add(a4,Defs::ZoneT_Roof_l)));
@@ -210,12 +213,7 @@ if((d1 >= d0)) {
 }
 (d0=Mem::l(j_add(a0,Defs::PlrT_SnapHeight_l)));
 if((d0 != d1)) {
-if((d0 > d1)) {
-(d0-=1024);
-}
-else {
-(d0+=1024);
-}
+d0=ab3d2::controls::heightStep(a0,d0,d1);
 }
 Mem::wl(j_add(a0,Defs::PlrT_SnapHeight_l),d0);
 if((Mem::b(j_add(a5,RawKeyMacros::RAWKEY_K)) != 0)) {
@@ -519,12 +517,14 @@ Mem::ww(PlayerBss::Plr_AddToBobble_w,d1);
 (d2=M68k::muls(d2,d4));
 (d6-=d2);
 (d7+=d1);
+ab3d2::controls::accelerate(a0,d6,d7);
 if((Mem::b(PlayerBss::Plr_Decelerate_b) != 0)) {
 Mem::wl(j_add(a0,Defs::PlrT_SnapXSpdVal_l),j_add(Mem::l(j_add(a0,Defs::PlrT_SnapXSpdVal_l)),d6));
 Mem::wl(j_add(a0,Defs::PlrT_SnapZSpdVal_l),j_add(Mem::l(j_add(a0,Defs::PlrT_SnapZSpdVal_l)),d7));
 }
 (d6=Mem::l(j_add(a0,Defs::PlrT_SnapXSpdVal_l)));
 (d7=Mem::l(j_add(a0,Defs::PlrT_SnapZSpdVal_l)));
+ab3d2::controls::roomMove(a0,d6,d7);
 Mem::wl(j_add(a0,Defs::PlrT_SnapXOff_l),j_add(Mem::l(j_add(a0,Defs::PlrT_SnapXOff_l)),d6));
 Mem::wl(j_add(a0,Defs::PlrT_SnapZOff_l),j_add(Mem::l(j_add(a0,Defs::PlrT_SnapZOff_l)),d7));
 (d5=M68k::setb(d5,Mem::ub(ControlloopData::fire_key)));

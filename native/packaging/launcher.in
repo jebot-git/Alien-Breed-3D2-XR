@@ -1,0 +1,4 @@
+#!/bin/sh
+# Use native Wayland/OpenXR paths selected by DomeD's validated launch realm.
+export AB3D2_XR_ASSETS="${AB3D2_XR_ASSETS:-@CMAKE_INSTALL_FULL_DATADIR@/alien-breed3d2-xr}"
+exec "@CMAKE_INSTALL_FULL_LIBEXECDIR@/alien-breed3d2-xr" "$@"

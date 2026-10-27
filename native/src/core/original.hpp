@@ -1,6 +1,7 @@
 // Native C++ translation of original-game routines; see SOURCE_AUDIT.txt.
 #pragma once
 #include "host.hpp"
+#include "audio_bridge.hpp"
 namespace Ab3diipatchidr {}
 namespace Assets {}
 namespace Cd32joy {}
@@ -2749,18 +2750,18 @@ inline bool started={};
 inline bool running={};
 inline std::vector<bool> segActive=std::vector<bool>(4);
 inline bool dbgCapture=false;
-inline bool ensureStarted(){return false;}
-inline bool needsBuffer(){return false;}
+inline bool ensureStarted(){return ab3d2::audio_bridge::ensureStarted ? ab3d2::audio_bridge::ensureStarted() : false;}
+inline bool needsBuffer(){return ab3d2::audio_bridge::needsBuffer ? ab3d2::audio_bridge::needsBuffer() : false;}
 inline void consumeTriggers(){return j_unported<void>("Audio.consumeTriggers");}
-inline void queueFromPaula(){return j_unported<void>("Audio.queueFromPaula");}
+inline void queueFromPaula(){if(ab3d2::audio_bridge::queueFromPaula)ab3d2::audio_bridge::queueFromPaula();}
 inline int32_t smp(int32_t ch,int32_t refPer){return j_unported<int32_t>("Audio.smp");}
 inline int32_t clamp16(int32_t v){return j_unported<int32_t>("Audio.clamp16");}
-inline void captureFrame(){return j_unported<void>("Audio.captureFrame");}
+inline void captureFrame(){if(ab3d2::audio_bridge::captureFrame)ab3d2::audio_bridge::captureFrame();}
 inline void dumpWav(std::string path){return j_unported<void>("Audio.dumpWav");}
 inline void writeStr(int32_t o,std::string s){return j_unported<void>("Audio.writeStr");}
 inline void writeLE16(int32_t o,int32_t v){return j_unported<void>("Audio.writeLE16");}
 inline void writeLE32(int32_t o,int32_t v){return j_unported<void>("Audio.writeLE32");}
-inline void stop(){return;}
+inline void stop(){if(ab3d2::audio_bridge::stop)ab3d2::audio_bridge::stop();}
 }
 namespace Display {
 inline void open(std::string title,int32_t scale){return j_unported<void>("Display.open");}
@@ -3237,8 +3238,8 @@ inline void Res_FreeFloorsAndTextures(){return j_unported<void>("Res.Res_FreeFlo
 inline void Res_LoadWallTextures(){return j_unported<void>("Res.Res_LoadWallTextures");}
 inline void Res_FreeWallTextures(){return j_unported<void>("Res.Res_FreeWallTextures");}
 inline void Res_LoadLevelData(){return j_unported<void>("Res.Res_LoadLevelData");}
-inline void Res_FreeLevelData(){return j_unported<void>("Res.Res_FreeLevelData");}
-inline void Res_ReleaseScreenMemory(){return j_unported<void>("Res.Res_ReleaseScreenMemory");}
+inline void Res_FreeLevelData(){/* Native asset image is owned by Runtime, not individual Amiga allocations. */}
+inline void Res_ReleaseScreenMemory(){/* Native GPU targets are owned by Renderer/OpenXR. */}
 }
 namespace Sys {
 inline constexpr int32_t SYS_ALERT_Y_SPACE=12;

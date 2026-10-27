@@ -191,7 +191,7 @@ class Emitter:
   if isinstance(n,T.Statement):return ';\n'
   raise ValueError(('statement',type(n).__name__))
 
-header=['// Native C++ translation of original-game routines; see SOURCE_AUDIT.txt.','#pragma once','#include "host.hpp"']
+header=['// Native C++ translation of original-game routines; see SOURCE_AUDIT.txt.','#pragma once','#include "host.hpp"','#include "audio_bridge.hpp"']
 # Data-label values come from the original source layout, independent of a JVM at runtime.
 for name in classes:header.append('namespace '+name+' {}')
 for name,(tree,cls,p) in classes.items():
@@ -211,7 +211,7 @@ for name,(tree,cls,p) in classes.items():
     except Exception:pass
  for m in cls.methods:
   signature=typ(m.return_type)+' '+(m.name+'_fn' if m.name in fields[name] else m.name)+'('+','.join(typ(p.type)+('&' if p.type.dimensions else '')+' '+p.name for p in m.parameters)+')'
-  overrides={('ScreenC','hostDisplay'):'return nullptr;',('ExecLib','CopyMem'):'Mem::copy(source,dest,size);',('ExecLib','RawDoFmt'):'j_rawDoFmt(a0,a1,sink);',('Audio','ensureStarted'):'return false;',('Audio','needsBuffer'):'return false;',('Audio','stop'):'return;'}
+  overrides={('ScreenC','hostDisplay'):'return nullptr;',('ExecLib','CopyMem'):'Mem::copy(source,dest,size);',('ExecLib','RawDoFmt'):'j_rawDoFmt(a0,a1,sink);',('Audio','ensureStarted'):'return ab3d2::audio_bridge::ensureStarted ? ab3d2::audio_bridge::ensureStarted() : false;',('Audio','needsBuffer'):'return ab3d2::audio_bridge::needsBuffer ? ab3d2::audio_bridge::needsBuffer() : false;',('Audio','stop'):'if(ab3d2::audio_bridge::stop)ab3d2::audio_bridge::stop();',('Audio','queueFromPaula'):'if(ab3d2::audio_bridge::queueFromPaula)ab3d2::audio_bridge::queueFromPaula();',('Audio','captureFrame'):'if(ab3d2::audio_bridge::captureFrame)ab3d2::audio_bridge::captureFrame();',('Res','Res_FreeLevelData'):'/* Runtime owns the native memory image. */return;',('Res','Res_ReleaseScreenMemory'):'/* Native GPU presentation owns targets. */return;'}
   if (name,m.name) in overrides:header.append('inline '+signature+'{'+overrides[(name,m.name)]+'}')
   elif name in selected and (name not in only_methods or m.name in only_methods[name]):header.append(signature+';')
   else:header.append('inline '+signature+'{return j_unported<'+typ(m.return_type)+'>("'+name+'.'+m.name+'");}')

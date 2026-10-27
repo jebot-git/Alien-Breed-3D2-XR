@@ -1,5 +1,5 @@
 ALIEN BREED 3D II XR — ORIGINAL ENGINE AUDIT
-2026-10-27
+2026-10-28
 
 Decision
 Build the XR product in native C++. There is no JVM, Java UI or Java runtime
@@ -23,7 +23,7 @@ Sources examined
   https://github.com/guillaumemonet/ab3d2-tkg-java
   3090d9f59b603816e7cc94960c332204ce94f259
   used only as a migration/reference source, not a product dependency.
-* OpenGL presentation/importer base (history preserved):
+* OpenGL presentation/importer reference:
   https://github.com/guillaumemonet/ab3d2-tkg-rebirth
   dd1fbd1ed04fdb12347c41aeb77e8a2af83fb08a
 * Vulkan RTX module:
@@ -32,9 +32,8 @@ Sources examined
 * https://github.com/retro-foundry/amiga-recomp
   Its published host covers synthetic MC68000 demos, not the game's 68020+
   instruction set, AmigaOS/ADF services, input/audio or playable AB3DII.
-* OpenXR GPU presentation library:
-  https://github.com/oneMillionWorlds/Tamarin
-  Maven com.onemillionworlds:tamarin:3.2.2, BSD-3-Clause.
+* Native OpenXR/EGL/GLX and DomeD bridge: adapted from the existing native
+  Alien Breed XR/Tempest integration. No Java XR library is used.
 
 Why not compile the original C directly?
 The C covers platform, preferences, PVS and integration. Core gameplay remains
@@ -74,4 +73,17 @@ Reference evidence (before the native C++ migration)
 Provenance
 Native additions under native/. Original source and reference authors retain
 their credits. No additional license is asserted over the original game/data or
-vendored upstream code. Tamarin retains its own dependency license.
+vendored upstream code.
+
+Native validation (2026-10-28)
+* All16 retail maps match80 source-reference ticks for player, held weapon and
+  every actor, including original collision/AI/combat/animation state.
+* Native save/replay matches RAM exactly except wall-clock profiling timestamps.
+* Original successful/death intermissions and campaign inventory carry pass.
+* Analog movement, physical crouch/room movement, close/up/down tracked damage,
+  original fire cooldown and fully vertical projectile/hitscan checks pass.
+* Real OpenGL tests cover all16 scenes, original meshes and animation, stereo,
+  door/lift deformation, sky, GPU water, source palette lighting and aim guide.
+* Isolated native OpenXR fixture:180 stereo frames/360 eye renders,99 PAL ticks
+  at90Hz presentation, no missing assets, Intel Arc A770. No headset launched.
+* Native product links system SDL2/OpenXR/OpenGL/audio services with no JVM.
