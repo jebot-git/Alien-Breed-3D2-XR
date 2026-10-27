@@ -30,8 +30,17 @@ the sprite until the original engine initializes it. Original centers remain
 unchanged. Original shot pools are included.
 OBJ model frames are cached in GPU buffers, with original texture atlas UVs.
 Held weapons use the original held-entity model/frame and original relative
-angle (4096-heldAngle+playerAngle), with a physical 0.22 mount scale. World
-polygon models retain the extracted original 0.5 scale. Original bitmapped
+angle (4096-heldAngle+playerAngle), with a physical 0.22 mount scale.
+Hires sets the held angle to player+4096, then animObj adds the original
+actAnim word2: 2048 for the -X shotgun, zero for the six -Z weapons. Each
+gun uses its actual original held rest frame (actAnim[0], not pickup frame0)
+to center the front muzzle ring on tracked -Z. This removes original screen
+composition offsets without changing mesh, animation or game state. The
+rest-frame socket remains stable through firing; muzzleDistance() returns
+the physical distance used by the guide and native shot-origin adapter. World
+polygon models retain the extracted original 0.5 scale. A 28 cm physical
+laser segment follows the tracked -Z aim ray, beginning beyond the original
+held rest muzzle and retaining world/weapon depth occlusion. Original bitmapped
 font/art is reused for title/story/pause/end panels and the health/ammo/fuel HUD.
 
 The optional renderer-check.cpp under tests runs a real GL3.3 context over
@@ -57,7 +66,8 @@ when the physical head is below the water plane of the original zone.
 Framebuffer bindings and viewport remain owned by the caller. No CPU frame
 pixels are accessed or uploaded. effects-check.cpp covers the panorama
 half-turn repeat, water phase changes, underwater treatment and arbitrary
-framebuffer preservation.
+framebuffer preservation, depth-occluded aim guides and every original
+held weapon animation with a stable physical muzzle socket.
 
 Current fidelity limits: polygon/sprite materials use original color PNGs
 with object-brightness attenuation, rather than the full directional light

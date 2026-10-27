@@ -31,11 +31,14 @@ struct Renderer::Impl {
     std::map<std::string,int> uniforms;
     std::map<std::string,gpu::Texture> textures;
     std::map<std::string,gpu::Mesh> models;
+    std::map<std::string,std::vector<std::array<float,3>>> modelPoints;
+    struct Mount {float x=0,y=0,distance=.2f;};
+    std::map<int,Mount> weaponMounts;Mount weaponMount;
     gpu::Image mainPalette;std::map<std::tuple<int,int,int>,std::string> spritePaths;
     std::set<std::string> missing;
     std::vector<Region> wallRegions,floorRegions;
     gpu::Texture wallAtlas,wallPalette,floorAtlas,floorPalette;
-    gpu::Mesh walls,floors,water,sky,unitQuad,hudMesh,panelText;
+    gpu::Mesh walls,floors,water,sky,laser,unitQuad,hudMesh,panelText;
     std::vector<gpu::Vertex> wallVertices,floorVertices,waterVertices;
     struct Wall {Json data;size_t first=0;int top=0,bottom=0,yoff=0,from=0,texture=-1;};
     struct Flat {int zone=0;bool upper=false,ceiling=false,moving=false;size_t first=0,count=0;float y=0;};
@@ -48,9 +51,12 @@ struct Renderer::Impl {
     std::string hudLabel;
     int levelIndex=-1,zoneCount=1;
     Impl(){shader=gpu::program();gpu::Image white;white.width=white.height=1;white.pixels={255,255,255,255};textures.emplace("#white",gpu::texture(white));++stats.textureUploads;white.pixels={0,0,0,255};textures.emplace("#black",gpu::texture(white));++stats.textureUploads;
-        std::vector<gpu::Vertex> q;quad(q,{{{-.5f,.5f,0,0,0},{.5f,.5f,0,1,0},{.5f,-.5f,0,1,1},{-.5f,-.5f,0,0,1}}});unitQuad=gpu::mesh(q);++stats.meshUploads;}
-    ~Impl(){clearLevel();gpu::destroy(sky);if(sceneTexture)glDeleteTextures(1,&sceneTexture);if(paletteIndex)glDeleteTextures(1,&paletteIndex);for(auto&[key,m]:models)gpu::destroy(m);gpu::destroy(unitQuad);gpu::destroy(hudMesh);gpu::destroy(panelText);for(auto&[key,t]:textures)if(t.id)glDeleteTextures(1,&t.id);for(auto*t:{&wallAtlas,&wallPalette,&floorAtlas,&floorPalette})if(t->id)glDeleteTextures(1,&t->id);if(pointTexture)glDeleteTextures(1,&pointTexture);if(shader)glDeleteProgram(shader);}
-    void clearLevel(){gpu::destroy(walls);gpu::destroy(floors);gpu::destroy(water);wallVertices.clear();floorVertices.clear();waterVertices.clear();wallRecords.clear();flatRecords.clear();waterZones.clear();actors.clear();hasWeapon=false;underwater=false;}
+        std::vector<gpu::Vertex> q;quad(q,{{{-.5f,.5f,0,0,0},{.5f,.5f,0,1,0},{.5f,-.5f,0,1,1},{-.5f,-.5f,0,0,1}}});unitQuad=gpu::mesh(q);++stats.meshUploads;
+        white.pixels={255,28,3,255};textures.emplace("#aim-guide",gpu::texture(white));++stats.textureUploads;std::vector<gpu::Vertex> ray;
+        for(int i=0;i<8;++i){float a=2*Pi*i/8,b=2*Pi*(i+1)/8,x0=.0015f*std::cos(a),y0=.0015f*std::sin(a),x1=.0015f*std::cos(b),y1=.0015f*std::sin(b);quad(ray,{{{x0,y0,0,0,0},{x1,y1,0,1,0},{x1,y1,-.28f,1,1},{x0,y0,-.28f,0,1}}});}
+        quad(ray,{{{-.0015f,.0015f,0,0,0},{.0015f,.0015f,0,1,0},{.0015f,-.0015f,0,1,1},{-.0015f,-.0015f,0,0,1}}});laser=gpu::mesh(ray);++stats.meshUploads;}
+    ~Impl(){clearLevel();gpu::destroy(sky);gpu::destroy(laser);if(sceneTexture)glDeleteTextures(1,&sceneTexture);if(paletteIndex)glDeleteTextures(1,&paletteIndex);for(auto&[key,m]:models)gpu::destroy(m);gpu::destroy(unitQuad);gpu::destroy(hudMesh);gpu::destroy(panelText);for(auto&[key,t]:textures)if(t.id)glDeleteTextures(1,&t.id);for(auto*t:{&wallAtlas,&wallPalette,&floorAtlas,&floorPalette})if(t->id)glDeleteTextures(1,&t->id);if(pointTexture)glDeleteTextures(1,&pointTexture);if(shader)glDeleteProgram(shader);}
+    void clearLevel(){gpu::destroy(walls);gpu::destroy(floors);gpu::destroy(water);wallVertices.clear();floorVertices.clear();waterVertices.clear();wallRecords.clear();flatRecords.clear();waterZones.clear();actors.clear();hasWeapon=false;weaponMount={};underwater=false;}
     int loc(const char*n){auto i=uniforms.find(n);if(i!=uniforms.end())return i->second;return uniforms.emplace(n,glGetUniformLocation(shader,n)).first->second;}
     gpu::Texture& texture(const std::string&name){auto i=textures.find(name);if(i!=textures.end())return i->second;try{auto t=gpu::texture(gpu::png(root/name));++stats.textureUploads;return textures.emplace(name,t).first->second;}catch(const std::exception&){if(missing.insert(name).second){++stats.missingAssets;std::cerr<<"Native renderer missing original texture: "<<name<<"\n";}return textures.at("#white");}}
     void loadAtlases(){
@@ -94,7 +100,27 @@ struct Renderer::Impl {
         while(std::getline(file,line)){std::istringstream row(line);std::string type;row>>type;if(type=="v"){std::array<float,3> p{};row>>p[0]>>p[1]>>p[2];positions.push_back(p);}else if(type=="vt"){std::array<float,2> p{};row>>p[0]>>p[1];uv.push_back(p);}else if(type=="f"){
             std::vector<gpu::Vertex> face;std::string item;while(row>>item){size_t slash=item.find('/');int pi=std::stoi(item)-1,ti=slash==std::string::npos?-1:std::stoi(item.substr(slash+1))-1;if(pi<0||pi>=int(positions.size()))continue;auto p=positions[pi];gpu::Vertex v{p[0],p[1],p[2],0,0};if(ti>=0&&ti<int(uv.size())){v.u=uv[ti][0];v.v=1-uv[ti][1];}face.push_back(v);}
             for(size_t k=1;k+1<face.size();++k){vertices.push_back(face[0]);vertices.push_back(face[k]);vertices.push_back(face[k+1]);}}}
-        if(vertices.empty())return nullptr;auto m=gpu::mesh(vertices);++stats.meshUploads;return &models.emplace(path,m).first->second;
+        if(vertices.empty())return nullptr;
+        modelPoints[path]=std::move(positions);
+        auto m=gpu::mesh(vertices);++stats.meshUploads;return &models.emplace(path,m).first->second;
+    }
+    Mount calibratedMount(int selected){
+        auto cached=weaponMounts.find(selected);if(cached!=weaponMounts.end())return cached->second;
+        Mount result;if(selected<0||selected>=int(glf["guns"].size()))return result;
+        auto&definition=glf["objects"][glf["guns"][selected]["gunObject"].get<int>()];
+        if(!definition.value("isVector",false))return result;auto&rest=definition["actAnim"][0];
+        int index=rest["gfx"],frame=rest["frame"];if(!model(index,frame))return result;
+        std::string name=glf["vectorModels"][index].value("name","");auto path=numbered(("models/"+name+"/frame_").c_str(),frame,3,".obj");auto found=modelPoints.find(path);if(found==modelPoints.end())return result;
+        // Hires starts heldAngle at playerAngle+4096; animObj then adds the
+        // original actAnim word2 (2048 for shotgun, zero for other guns).
+        // The held frames also contain original screen-composition offsets.
+        // Calibrate from the actual muzzle ring, never firing flash geometry.
+        float yaw=-rest["word2"].get<float>()*2*Pi/8192,c=std::cos(yaw),s=std::sin(yaw),front=1e9f;
+        for(const auto&p:found->second)front=std::min(front,-s*p[0]+c*p[2]);
+        float left=1e9f,right=-1e9f,bottom=1e9f,top=-1e9f;
+        for(const auto&p:found->second)if(-s*p[0]+c*p[2]<front+.03126f){float x=c*p[0]+s*p[2];left=std::min(left,x);right=std::max(right,x);bottom=std::min(bottom,p[1]);top=std::max(top,p[1]);}
+        result.x=-(left+right)*.11f;result.y=-(bottom+top)*.11f;result.distance=std::max(.03f,-front*.22f+.02f);
+        weaponMounts.emplace(selected,result);return result;
     }
     void fillWall(Wall&w,int top,int bottom,int yoff,int from,int tex){
         auto&d=w.data;int a=d.at("leftPt"),b=d.at("rightPt");if(a<0||b<0||a>=int(level["points"].size())||b>=int(level["points"].size()))return;
@@ -141,6 +167,7 @@ struct Renderer::Impl {
         waterScroll=(uint32_t(Mem::l(HiresData::wateroff))&16383)/16384.f;waterAngle=Mem::uw(HiresData::wtan);int waterPointer=Mem::l(HiresData::draw_WaterFramePtr_l);waterPhase=uint32_t(Mem::l(HiresData::wateroff))&7;for(int i=0;i<8;++i)if(waterPointer&&Mem::l(HiresData::draw_WaterFramePtrs_vl+i*4)==waterPointer){waterPhase=i;break;}
         int playerZone=Mem::uw(PlayerBss::Plr1_Zone_w);underwater=waterZones.count(playerZone);if(underwater&&valid(zones+playerZone*4,4)){int zp=Mem::l(zones+playerZone*4);waterY=valid(zp,22)?-Mem::l(zp+18)/8192.f:0;}
         health=Mem::uw(PlayerBss::Plr1_Health_w);fuel=Mem::uw(PlayerBss::Plr1_JetpackFuel_w);gun=Mem::ub(PlayerBss::Plr1_GunSelected_b);playerAngle=Mem::uw(PlayerBss::Plr1_AngPos_w);int bullet=gun<int(glf["guns"].size())?glf["guns"][gun].value("bulletType",0):0;ammo=Mem::uw(PlayerBss::Plr1_AmmoCounts_vw+std::clamp(bullet,0,19)*2);
+        weaponMount=hasWeapon?calibratedMount(gun):Mount{};
         std::string label="VITALITY "+std::to_string(health)+"   AMMO "+std::to_string(ammo)+"   FUEL "+std::to_string(fuel);if(gun<int(glf["guns"].size()))label+="   "+glf["guns"][gun].value("name","");if(label!=hudLabel){hudLabel=label;makeHud();}stats.entities=actors.size();
     }
     std::optional<gpu::Image> nativeSprite(const Actor&a,const std::string&sheet){
@@ -180,7 +207,12 @@ struct Renderer::Impl {
             draw(walls,wallAtlas,Identity,view.worldScale,1,1,1,&wallPalette);draw(floors,floorAtlas,Identity,view.worldScale,2,1,1,&floorPalette);
             for(const auto&a:actors){float shade=a.additive?1:std::clamp(1-a.bright/100.f,.15f,1.f);if(a.vector){auto*m=model(a.model,a.frame);if(m)draw(*m,texture("textures/texturemaps_atlas.png"),gpu::transform(a.x,a.y,a.z,(4096-a.angle)*2*Pi/8192,.5f,.5f,.5f),view.worldScale,0,shade);}else{auto&t=sprite(a);float yaw=std::atan2(view.headWorld[12]/view.worldScale-a.x,view.headWorld[14]/view.worldScale-a.z);auto matrix=gpu::transform(a.x,a.y,a.z,yaw,(a.flip?-1:1)*a.width,a.height,1);if(a.additive){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);glDepthMask(GL_FALSE);}draw(unitQuad,t,matrix,view.worldScale,0,shade);if(a.additive){glDisable(GL_BLEND);glDepthMask(GL_TRUE);}}}
             if(water.count){copyScene();glDepthMask(GL_TRUE);draw(water,floorAtlas,Identity,view.worldScale,4,1,1,&texture("textures/water_shade.lut.png"));}
-            if(hasWeapon){auto*m=model(weapon.model,weapon.frame);float yaw=(4096-weapon.angle+playerAngle)*2*Pi/8192;Matrix mount=view.trackedWeapon?view.weaponWorld:gpu::multiply(view.headWorld,gpu::transform(.12f,-.25f,-.32f));Matrix matrix=gpu::multiply(mount,gpu::transform(0,0,0,yaw,.22f,.22f,.22f));if(m){draw(*m,texture("textures/texturemaps_atlas.png"),matrix,1);++stats.weaponDraws;}}
+            if(hasWeapon){auto*m=model(weapon.model,weapon.frame);float yaw=(4096-weapon.angle+playerAngle)*2*Pi/8192;Matrix mount=view.trackedWeapon?view.weaponWorld:gpu::multiply(view.headWorld,gpu::transform(.12f,-.25f,-.32f));Matrix matrix=gpu::multiply(mount,gpu::transform(weaponMount.x,weaponMount.y,0,yaw,.22f,.22f,.22f));if(m){draw(*m,texture("textures/texturemaps_atlas.png"),matrix,1);++stats.weaponDraws;if(view.trackedWeapon&&panel.kind==Panel::Gameplay){
+                // A physical 28 cm segment on the exact tracked -Z aim ray.
+                // Begin just beyond conservative original-mesh muzzle bounds
+                // so it is visible without disabling world/weapon depth.
+                auto guide=gpu::multiply(view.weaponWorld,gpu::transform(0,0,-weaponMount.distance));draw(laser,texture("#aim-guide"),guide,1);
+            }}}
         }
         if(underwater&&view.headWorld[13]<waterY*view.worldScale&&(panel.kind==Panel::Gameplay||panel.kind==Panel::Pause)){
             copyScene();glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glUniformMatrix4fv(loc("vp"),1,GL_FALSE,Identity.data());draw(unitQuad,texture("#white"),gpu::transform(0,0,0,0,2,2,1),1,5,1,1,&texture("textures/water_under.lut.png"));glUniformMatrix4fv(loc("vp"),1,GL_FALSE,view.viewProjection.data());
@@ -198,5 +230,6 @@ void Renderer::loadLevel(int index){impl->clearLevel();impl->levelIndex=index;im
 void Renderer::sync(){impl->synchronize();}
 void Renderer::setPanel(const Panel&panel){if(impl->panel.kind==panel.kind&&impl->panel.caption==panel.caption&&impl->panel.lines==panel.lines&&impl->panel.selection==panel.selection)return;impl->panel=panel;if(!impl->root.empty())impl->makePanel();}
 void Renderer::drawEye(const RenderView&view){impl->eye(view);}
+float Renderer::muzzleDistance()const{return impl->weaponMount.distance;}
 const RenderStats&Renderer::stats()const{return impl->stats;}
 }

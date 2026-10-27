@@ -42,6 +42,8 @@ public:
     void sync();
     void setPanel(const Panel &panel);
     void drawEye(const RenderView &view);
+    // Synced rest-pose socket on weaponWorld -Z, in physical metres.
+    float muzzleDistance() const;
     const RenderStats &stats() const;
 };
 }
