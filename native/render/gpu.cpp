@@ -35,16 +35,28 @@ layout(location=0)in vec3 position;layout(location=1)in vec2 texcoord;layout(loc
 layout(location=3)in vec4 region;layout(location=4)in vec3 tile;
 uniform mat4 vp,model;uniform float scale;uniform int mode;uniform sampler2D points;
 out vec2 uv;out float bright;out vec3 world;flat out vec4 rect;flat out vec3 subtile;
-void main(){vec4 p=model*vec4(position,1);p.xyz*=scale;world=p.xyz;gl_Position=vp*p;uv=texcoord;rect=region;subtile=tile;bright=0;
+void main(){vec4 p=model*vec4(position,1);p.xyz*=scale;world=p.xyz;gl_Position=vp*p;if(mode==3)gl_Position=gl_Position.xyww;uv=texcoord;rect=region;subtile=tile;bright=0;
 if(lightSource.x>=0){float raw=abs(texelFetch(points,ivec2(int(lightSource.y),int(lightSource.x)),0).r)-300+lightSource.z;
 bright=mode==1?2*(mod(raw+128,256)-128):raw;}})";
     const char*fs=R"(#version 330 core
 in vec2 uv;in float bright;in vec3 world;flat in vec4 rect;flat in vec3 subtile;out vec4 color;
-uniform sampler2D image,palette;uniform int mode;uniform float shade,opacity,worldScale;uniform vec4 tint;uniform vec3 camera,forward;
+uniform sampler2D image,palette,waves,scene;uniform sampler3D paletteIndex;uniform vec4 viewport;uniform float waterPhase,waterScroll,waterAngle;uniform int mode;uniform float shade,opacity,worldScale;uniform vec4 tint;uniform vec3 camera,forward;
 void main(){vec4 sampleColor;float depth=max(0,dot(world-camera,forward))/max(.001,worldScale);
 if(mode==1||mode==2){ivec2 at=ivec2(rect.xy+vec2(mod(floor(fract(uv.x)*subtile.y)+subtile.x,rect.z),floor(fract(uv.y)*rect.w)));
 float index=floor(texelFetch(image,at,0).r*255+.5);float bank=mode==1?min(31,ceil(clamp(mod(bright+128,256)-128+floor(depth*.5),0,64)*.5)):clamp(floor(bright+floor(depth*.125)),0,30);
 ivec2 size=textureSize(palette,0);sampleColor=texelFetch(palette,ivec2(int(index),int(bank+subtile.z*32)),0);
+}else if(mode==3)sampleColor=texture(image,vec2(fract(uv.x),clamp(uv.y,0.0,1.0)));
+else if(mode==4||mode==5){
+ vec2 screen=(gl_FragCoord.xy-viewport.xy)/viewport.zw;float row=0.0;
+ if(mode==4){
+  vec2 waveUV=uv+vec2(waterScroll);float wave=floor(texture(waves,vec2(fract(waveUV.x+waveUV.y*.5),(waterPhase+.5)/8.0)).r*255.0+.5);
+  float engineDepth=floor(depth*64.0);float angle=mod(engineDepth*128.0+waterAngle,8192.0);
+  float line=floor(floor(sin(angle*6.28318530718/8192.0)*32768.0/(engineDepth+300.0))/32.0)+4.0;
+  float direction=camera.y>=world.y?1.0:-1.0;screen.y-=direction*line/240.0;
+  row=clamp(wave+min(floor(mod(engineDepth,16384.0)/256.0)*2.0,10.0),0.0,28.0);
+ }
+ vec3 previous=texture(scene,clamp(screen,vec2(.5)/viewport.zw,vec2(1.0)-vec2(.5)/viewport.zw)).rgb;
+ float index=floor(texture(paletteIndex,previous).r*255.0+.5);sampleColor=texelFetch(palette,ivec2(int(index),int(row)),0);
 }else sampleColor=texture(image,uv);
 if(sampleColor.a<.02)discard;color=vec4(sampleColor.rgb*shade,sampleColor.a*opacity)*tint;})";
     auto compile=[](unsigned kind,const char*source){unsigned s=glCreateShader(kind);glShaderSource(s,1,&source,nullptr);glCompileShader(s);int ok;glGetShaderiv(s,GL_COMPILE_STATUS,&ok);if(!ok){char log[4096]{};glGetShaderInfoLog(s,sizeof(log),nullptr,log);glDeleteShader(s);throw std::runtime_error(std::string("Native renderer shader: ")+log);}return s;};

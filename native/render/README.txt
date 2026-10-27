@@ -24,7 +24,10 @@ updates with original animation data. There is no CPU world raster, pixel
 upload per eye, or production framebuffer readback.
 
 Every active actor uses original CID position, height word, zone, model/sheet,
-frame, angle, palette and additive flag. Original shot pools are included.
+frame, angle, palette and additive flag. Raw sprite bytes 6/7 are half
+extents; full physical width/height is raw/32. A zero dimension suppresses
+the sprite until the original engine initializes it. Original centers remain
+unchanged. Original shot pools are included.
 OBJ model frames are cached in GPU buffers, with original texture atlas UVs.
 Held weapons use the original held-entity model/frame and original relative
 angle (4096-heldAngle+playerAngle), with a physical 0.22 mount scale. World
@@ -38,11 +41,30 @@ native/include, native/src/core and native/render include directories.
 On EGL/Wayland, glewInit may report no GLX display even though GL3.3 entry
 points loaded successfully; require GLEW_VERSION_3_3 in that case.
 
+Sky and water
+-------------
+The extracted original 648x240 panorama wraps twice per turn and clamps
+vertically, following Sky.java/Draw_SkyBackdrop. A head-centred cylinder
+projects at infinity; it remains behind actual room geometry in both eyes.
+
+Water follows Hires.draw_WaterSurface: original PAL water-frame pointers,
+wateroff and wtan drive eight wave phases, the distance palette, and sine
+screen-line displacement. A GPU-only copy of the current color target
+retains actors/scenery beneath the water; a resident 64-cubed nearest-color
+lookup restores original palette indices before applying the original
+29-row water tint. The original underwater palette is applied to the scene
+when the physical head is below the water plane of the original zone.
+Framebuffer bindings and viewport remain owned by the caller. No CPU frame
+pixels are accessed or uploaded. effects-check.cpp covers the panorama
+half-turn repeat, water phase changes, underwater treatment and arbitrary
+framebuffer preservation.
+
 Current fidelity limits: polygon/sprite materials use original color PNGs
 with object-brightness attenuation, rather than the full directional light
-rings and per-face shaded palette pipeline. Water is a transparent original
-floor texture, without the original refraction/underwater postprocessing.
-Sky backdrops and bump/special material effects are not implemented yet.
+rings and per-face shaded palette pipeline. Water color reindexing uses nearest palette colors on a 64-cubed grid,
+so close/duplicate original colors and non-palette actor shading can map
+ambiguously; screen displacement is scaled from the original 240-line
+projection. Bump/special material effects are not implemented yet.
 The original game state, mechanisms and gameplay are not replaced by these
 presentation approximations. Headset ergonomics, physical scaling and comfort
 still require testing; no physical headset is used by the isolated GPU check.
