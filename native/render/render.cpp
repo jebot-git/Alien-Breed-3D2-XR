@@ -1,5 +1,6 @@
 #include "render.hpp"
 #include "gpu.hpp"
+#include "lighting.hpp"
 #include "original.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -35,7 +36,7 @@ struct Renderer::Impl {
     struct Mount {float x=0,y=0,distance=.2f;};
     std::map<int,Mount> weaponMounts;Mount weaponMount;
     gpu::Image mainPalette;std::map<std::tuple<int,int,int>,std::string> spritePaths;
-    std::set<std::string> missing;
+    std::set<std::string> missing;std::map<int,std::string> spritePalettes;std::array<int8_t,1792> guff{};bool spriteFullscreen=false;
     std::vector<Region> wallRegions,floorRegions;
     gpu::Texture wallAtlas,wallPalette,floorAtlas,floorPalette;
     gpu::Mesh walls,floors,water,sky,laser,unitQuad,hudMesh,panelText;
@@ -44,8 +45,9 @@ struct Renderer::Impl {
     struct Flat {int zone=0;bool upper=false,ceiling=false,moving=false;size_t first=0,count=0;float y=0;};
     std::vector<Wall> wallRecords;
     std::vector<Flat> flatRecords;
-    struct Actor {float x=0,y=0,z=0,width=0,height=0;int model=0,frame=0,angle=0,zone=0,palette=0;bool vector=false,additive=false,flip=false;float bright=0;};
+    struct Actor {float x=0,y=0,z=0,width=0,height=0;int model=0,frame=0,angle=0,zone=0,palette=0;bool vector=false,additive=false,flip=false,lighted=false;float bright=0;lighting::PolyTable poly{};lighting::Rings ring{};};
     std::vector<Actor> actors;
+    std::vector<float> pointValues;std::vector<std::array<int,2>> lightingPoints;std::array<int16_t,5120> lightingSine{};
     Actor weapon;bool hasWeapon=false;
     int health=0,ammo=0,fuel=0,gun=0,playerAngle=0;
     std::string hudLabel;
@@ -73,6 +75,7 @@ struct Renderer::Impl {
         for(int i=0;i<64;++i){float a0=2*Pi*i/64,a1=2*Pi*(i+1)/64,u0=2.f*i/64,u1=2.f*(i+1)/64;float x0=std::sin(a0)*radius,z0=-std::cos(a0)*radius,x1=std::sin(a1)*radius,z1=-std::cos(a1)*radius;
             quad(vertices,{{{x0,half*extent,z0,u0,.5f-extent/2},{x1,half*extent,z1,u1,.5f-extent/2},{x1,-half*extent,z1,u1,.5f+extent/2},{x0,-half*extent,z0,u0,.5f+extent/2}}});}
         sky=gpu::mesh(vertices);++stats.meshUploads;texture("textures/sky/backdrop.png");texture("textures/water_waves.png");texture("textures/water_shade.lut.png");texture("textures/water_under.lut.png");
+        std::ifstream guffFile(root/"tables/guff.bin",std::ios::binary);guffFile.read(reinterpret_cast<char*>(guff.data()),guff.size());if(guffFile.gcount()!=guff.size())throw std::runtime_error("Missing original guff light table");
         mainPalette=gpu::png(root/"palette.png");auto&base=mainPalette;std::vector<unsigned char> indices(64*64*64);
         // One-time color -> original palette index cube. It lives in VRAM and
         // restores the original indexed water operation from the GPU color
@@ -96,9 +99,10 @@ struct Renderer::Impl {
         std::string name=glf["vectorModels"][index].value("name","");if(name.empty())return nullptr;
         auto path=numbered(("models/"+name+"/frame_").c_str(),frame,3,".obj");auto known=models.find(path);if(known!=models.end())return &known->second;
         std::ifstream file(root/path);if(!file && frame!=0)return model(index,0);if(!file){if(missing.insert(path).second)++stats.missingAssets;return nullptr;}
+        std::ifstream levels(root/numbered(("models/"+name+"/frame_").c_str(),frame,3,".lvl"));
         std::vector<std::array<float,3>> positions;std::vector<std::array<float,2>> uv;std::vector<gpu::Vertex> vertices;std::string line;
         while(std::getline(file,line)){std::istringstream row(line);std::string type;row>>type;if(type=="v"){std::array<float,3> p{};row>>p[0]>>p[1]>>p[2];positions.push_back(p);}else if(type=="vt"){std::array<float,2> p{};row>>p[0]>>p[1];uv.push_back(p);}else if(type=="f"){
-            std::vector<gpu::Vertex> face;std::string item;while(row>>item){size_t slash=item.find('/');int pi=std::stoi(item)-1,ti=slash==std::string::npos?-1:std::stoi(item.substr(slash+1))-1;if(pi<0||pi>=int(positions.size()))continue;auto p=positions[pi];gpu::Vertex v{p[0],p[1],p[2],0,0};if(ti>=0&&ti<int(uv.size())){v.u=uv[ti][0];v.v=1-uv[ti][1];}face.push_back(v);}
+            int base=0,angle=0;if(levels)levels>>base>>angle;std::vector<gpu::Vertex> face;std::string item;while(row>>item){size_t slash=item.find('/');int pi=std::stoi(item)-1,ti=slash==std::string::npos?-1:std::stoi(item.substr(slash+1))-1;if(pi<0||pi>=int(positions.size()))continue;auto p=positions[pi];gpu::Vertex v{p[0],p[1],p[2],0,0};if(ti>=0&&ti<int(uv.size())){v.u=uv[ti][0];v.v=1-uv[ti][1];}v.lightOffset=base;v.regionX=angle;face.push_back(v);}
             for(size_t k=1;k+1<face.size();++k){vertices.push_back(face[0]);vertices.push_back(face[k]);vertices.push_back(face[k+1]);}}}
         if(vertices.empty())return nullptr;
         modelPoints[path]=std::move(positions);
@@ -151,11 +155,12 @@ struct Renderer::Impl {
             if(value>=0&&high){int anim=high&15,blend=(high>>4)+1;int p=AnimBss::Anim_BrightTable_vw+anim*2-2;if(anim>0&&valid(p,2)){int delta=int16_t((Mem::w(p)-value)*blend);value=int8_t(value+(delta>>4));}}
             int n=(value*397)>>8;if(n<0)n-=600;values[z*40+slot]=int16_t(n+300);}
         if(!pointTexture)glGenTextures(1,&pointTexture);glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,pointTexture);glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0);glPixelStorei(GL_UNPACK_ALIGNMENT,1);glPixelStorei(GL_UNPACK_ROW_LENGTH,0);glPixelStorei(GL_UNPACK_SKIP_ROWS,0);glPixelStorei(GL_UNPACK_SKIP_PIXELS,0);
-        glTexImage2D(GL_TEXTURE_2D,0,GL_R32F,40,zoneCount,0,GL_RED,GL_FLOAT,values.data());glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);glActiveTexture(GL_TEXTURE0);++stats.dynamicUpdates;
+        glTexImage2D(GL_TEXTURE_2D,0,GL_R32F,40,zoneCount,0,GL_RED,GL_FLOAT,values.data());pointValues=std::move(values);
+        int points=Mem::l(LevelBss::Lvl_PointsPtr_l);lightingPoints.resize(level["points"].size());for(size_t i=0;i<lightingPoints.size();++i)lightingPoints[i]={Mem::w(points+i*4),Mem::w(points+i*4+2)};for(size_t i=0;i<lightingSine.size();++i)lightingSine[i]=Mem::w(TablesData::SinCosTable_vw+i*2);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);glActiveTexture(GL_TEXTURE0);++stats.dynamicUpdates;
     }
-    Actor actor(int address,int points){Actor a;int id=Mem::w(address);a.x=Mem::w(points+id*8)/64.f;a.z=-Mem::w(points+id*8+4)/64.f;a.y=-Mem::w(address+4)/64.f;a.zone=Mem::w(address+12);a.vector=Mem::ub(address+6)==255;a.width=Mem::ub(address+6)/32.f;a.height=Mem::ub(address+7)/32.f;a.model=Mem::uw(address+8);a.frame=a.vector?Mem::uw(address+10):Mem::ub(address+11);a.palette=Mem::ub(address+10)&127;a.flip=(Mem::ub(address+10)&128)!=0;a.additive=!a.vector&&a.palette>=6;a.angle=Mem::uw(address+30);a.bright=Mem::w(address+2);return a;}
+    Actor actor(int address,int points){Actor a;int id=Mem::w(address);a.x=Mem::w(points+id*8)/64.f;a.z=-Mem::w(points+id*8+4)/64.f;a.y=-Mem::w(address+4)/64.f;a.zone=Mem::w(address+12);a.vector=Mem::ub(address+6)==255;a.width=Mem::ub(address+6)/32.f;a.height=Mem::ub(address+7)/32.f;a.model=Mem::uw(address+8);a.frame=a.vector?Mem::uw(address+10):Mem::ub(address+11);a.palette=Mem::ub(address+10)&127;a.flip=(Mem::ub(address+10)&128)!=0;a.additive=!a.vector&&a.palette>=6;a.angle=Mem::uw(address+30);a.bright=Mem::w(address+2);a.lighted=!a.vector&&a.palette>=2&&a.palette<=5;if(a.lighted)a.ring=lighting::rings(level,pointValues,lightingPoints,lightingSine,int(std::lround(a.x*64)),int(std::lround(-a.z*64)),a.zone,Mem::ub(address+63)!=0,true);if(a.vector)a.poly=lighting::polygon(lighting::rings(level,pointValues,lightingPoints,lightingSine,int(std::lround(a.x*64)),int(std::lround(-a.z*64)),a.zone,Mem::ub(address+63)!=0));return a;}
     void synchronize(){
-        if(levelIndex<0)return;pointLights();int graphics=Mem::l(LevelBss::Lvl_GraphicsPtr_l);bool wallChanged=false,floorChanged=false;
+        if(levelIndex<0)return;spriteFullscreen=Mem::b(VidBss::Vid_FullScreen_b)!=0;pointLights();int graphics=Mem::l(LevelBss::Lvl_GraphicsPtr_l);bool wallChanged=false,floorChanged=false;
         if(valid(graphics))for(auto&w:wallRecords){int p=graphics+w.data.value("gfxOfs",0)+2;if(!valid(p,28))continue;int top=Mem::l(p+18)>>8,bottom=Mem::l(p+22)>>8,yoff=Mem::uw(p+10),from=Mem::uw(p+8)<<4,tex=Mem::uw(p+12)&32767;if(top!=w.top||bottom!=w.bottom||yoff!=w.yoff||from!=w.from||tex!=w.texture){fillWall(w,top,bottom,yoff,from,tex);wallChanged=true;}}
         if(wallChanged){gpu::update(walls,wallVertices);++stats.dynamicUpdates;}
         int zones=Mem::l(LevelBss::Lvl_ZonePtrsPtr_l);if(valid(zones))for(auto&f:flatRecords){int p=Mem::l(zones+f.zone*4);if(!valid(p,18))continue;int off=f.ceiling?(f.upper?14:6):(f.upper?10:2);float y=-Mem::l(p+off)/8192.f;if(std::abs(y-f.y)>.00001f){for(size_t i=f.first;i<f.first+f.count;++i)floorVertices[i].y=y;f.y=y;floorChanged=true;}}
@@ -170,7 +175,7 @@ struct Renderer::Impl {
         weaponMount=hasWeapon?calibratedMount(gun):Mount{};
         std::string label="VITALITY "+std::to_string(health)+"   AMMO "+std::to_string(ammo)+"   FUEL "+std::to_string(fuel);if(gun<int(glf["guns"].size()))label+="   "+glf["guns"][gun].value("name","");if(label!=hudLabel){hudLabel=label;makeHud();}stats.entities=actors.size();
     }
-    std::optional<gpu::Image> nativeSprite(const Actor&a,const std::string&sheet){
+    std::optional<gpu::Image> nativeSprite(const Actor&a,const std::string&sheet,bool indexed=false){
         if(a.model<0||a.model>=30||a.frame<0||a.frame>=32)return std::nullopt;
         int entry=DrawBss::Draw_ObjectPtrs_vl+a.model*16,glfBase=Mem::l(HiresData::GLF_DatabasePtr_l),record=glfBase+Defs::GLFT_FrameData_l+a.model*256+a.frame*8;
         if(!valid(entry,16)||!valid(record,8))return std::nullopt;int wad=Mem::l(entry),ptr=Mem::l(entry+4),pal=Mem::l(entry+12),width=Mem::uw(record+4)*2,height=Mem::uw(record+6)*2;
@@ -180,6 +185,7 @@ struct Renderer::Impl {
         gpu::Image image{width,height,std::vector<unsigned char>(width*height*4)};
         for(int x=0;x<width;++x){uint32_t column=Mem::l(columns+x*4);if(!column)continue;unsigned format=column>>24;int data=wad+(column&0xffffff);
             for(int y=0;y<height;++y){int at=data+(down+y)*(hqn?1:2);if(!valid(at,hqn?1:2))continue;int index=hqn?Mem::ub(at):format<=2?(Mem::uw(at)>>(format*5))&31:0;if(!index)continue;
+                if(indexed){auto out=image.pixels.data()+(y*width+x)*4;out[0]=index;out[3]=255;continue;}
                 int colorAt=hqn?pal+std::clamp(a.palette-2,0,3)*256+index:a.additive?pal+index*256:pal+index*2;if(!valid(colorAt))continue;unsigned color=Mem::ub(colorAt);auto out=image.pixels.data()+(y*width+x)*4;std::copy_n(mainPalette.pixels.data()+color*4,3,out);out[3]=255;
             }}
         // Fully transparent source frames (e.g. PICKUPS/28 story markers) are
@@ -190,13 +196,18 @@ struct Renderer::Impl {
         auto key=std::make_tuple(a.model,a.frame,a.palette);auto cached=spritePaths.find(key);if(cached!=spritePaths.end())return textures.at(cached->second);
         if(a.model<0||a.model>=int(glf["spriteSheets"].size()))return textures.at("#white");std::string sheet=glf["spriteSheets"][a.model].value("name","");std::string path=numbered(("textures/objects/"+sheet+"/frame_").c_str(),a.frame,2,".png");
         if(a.palette>=3&&a.palette<6)path=numbered(("textures/objects/"+sheet+"/frame_").c_str(),a.frame,2,("_p"+std::to_string(a.palette-2)+".png").c_str());
+        if(a.lighted){auto decoded=nativeSprite(a,sheet,true);if(!decoded)throw std::runtime_error("Cannot decode original indexed sprite "+sheet);std::string generated="#indexed/"+sheet+"/"+std::to_string(a.frame)+"/"+std::to_string(a.palette);auto uploaded=gpu::texture(*decoded);++stats.textureUploads;textures.emplace(generated,uploaded);spritePaths.emplace(key,generated);
+            if(!spritePalettes.count(a.model)){int pal=Mem::l(DrawBss::Draw_ObjectPtrs_vl+a.model*16+12);if(!valid(pal,1024))throw std::runtime_error("Missing original sprite palette "+sheet);gpu::Image image{256,4,std::vector<unsigned char>(256*4*4)};for(int i=0;i<1024;++i){int index=Mem::ub(pal+i);std::copy_n(mainPalette.pixels.data()+index*4,4,image.pixels.data()+i*4);}std::string name="#sprite-palette/"+sheet;textures.emplace(name,gpu::texture(image));++stats.textureUploads;spritePalettes.emplace(a.model,name);}
+            return textures.at(generated);}
         if(std::filesystem::exists(root/path)){auto&result=texture(path);spritePaths.emplace(key,path);return result;}
         if(auto decoded=nativeSprite(a,sheet)){std::string generated="#native/"+sheet+"/"+std::to_string(a.frame)+"/"+std::to_string(a.palette);auto uploaded=gpu::texture(*decoded);++stats.textureUploads;textures.emplace(generated,uploaded);spritePaths.emplace(key,generated);return textures.at(generated);}
         return texture(path);
     }
     void text(std::vector<gpu::Vertex>&vertices,const std::string&value,float x,float y,float height){int columns=font.value("columns",16),first=font.value("firstChar",32),gw=font.value("glyphWidth",16),gh=font.value("glyphHeight",16);auto&t=texture("menu/endfont.png");for(unsigned char c:value){int glyph=int(c)-first;if(glyph<0||glyph>=int(font["widths"].size()))glyph='?'-first;float width=font["widths"][glyph].get<float>()*height/gh;float u=(glyph%columns)*gw/float(t.width),v=(glyph/columns)*gh/float(t.height),du=width/height*gh/t.width,dv=gh/float(t.height);quad(vertices,{{{x,y+height,-2.2f,u,v},{x+width,y+height,-2.2f,u+du,v},{x+width,y,-2.2f,u+du,v+dv},{x,y,-2.2f,u,v+dv}}});x+=width+height/16;}}
     void makeHud(){std::vector<gpu::Vertex> v;std::string name=gun<int(glf["guns"].size())?glf["guns"][gun].value("name",""):"";text(v,name,-.96f,-.65f,.05f);text(v,"VITALITY",-.96f,-.72f,.04f);text(v,"AMMO",-.25f,-.72f,.04f);text(v,"FUEL",.40f,-.72f,.04f);text(v,std::to_string(health),-.96f,-.81f,.085f);text(v,std::to_string(ammo),-.25f,-.81f,.085f);text(v,std::to_string(fuel),.40f,-.81f,.085f);gpu::destroy(hudMesh);hudMesh=gpu::mesh(v);++stats.meshUploads;}
-    void makePanel(){std::vector<gpu::Vertex>v;text(v,panel.caption,-.9f,.65f,.06f);float step=panel.lines.size()>20?.048f:.062f,y=.48f;for(size_t i=0;i<panel.lines.size();++i){text(v,(int(i)==panel.selection?"> ":"  ")+panel.lines[i],-.97f,y,step*.72f);y-=step;}gpu::destroy(panelText);panelText=gpu::mesh(v);++stats.meshUploads;}
+    float textWidth(const std::string&value,float height)const{float width=0;int first=font.value("firstChar",32),gh=font.value("glyphHeight",16);for(unsigned char c:value){int glyph=int(c)-first;if(glyph<0||glyph>=int(font["widths"].size()))glyph='?'-first;width+=font["widths"][glyph].get<float>()*height/gh+height/16;}return width;}
+    void makePanel(){std::vector<gpu::Vertex>v;float captionHeight=std::min(.06f,1.94f/std::max(.001f,textWidth(panel.caption,1)));text(v,panel.caption,-.97f,.65f,captionHeight);float step=panel.lines.size()>20?.048f:.062f,y=.48f;for(size_t i=0;i<panel.lines.size();++i){auto line=(int(i)==panel.selection?"> ":"  ")+panel.lines[i];float height=std::min(step*.72f,1.94f/std::max(.001f,textWidth(line,1)));text(v,line,-.97f,y,height);y-=step;}gpu::destroy(panelText);panelText=gpu::mesh(v);++stats.meshUploads;}
+
     void draw(const gpu::Mesh&m,const gpu::Texture&t,const Matrix&matrix,float scale,int mode=0,float shade=1,float opacity=1,const gpu::Texture*palette=nullptr){if(!m.count)return;glUseProgram(shader);glUniformMatrix4fv(loc("model"),1,GL_FALSE,matrix.data());glUniform1f(loc("scale"),scale);glUniform1i(loc("mode"),mode);glUniform1f(loc("shade"),shade);glUniform1f(loc("opacity"),opacity);glUniform4f(loc("tint"),1,1,1,1);glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,t.id);glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,palette?palette->id:0);glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,pointTexture);glActiveTexture(GL_TEXTURE3);glBindTexture(GL_TEXTURE_2D,sceneTexture);glActiveTexture(GL_TEXTURE4);glBindTexture(GL_TEXTURE_3D,paletteIndex);glActiveTexture(GL_TEXTURE5);glBindTexture(GL_TEXTURE_2D,texture("textures/water_waves.png").id);glActiveTexture(GL_TEXTURE0);glBindVertexArray(m.vao);glDrawArrays(GL_TRIANGLES,0,m.count);++stats.drawCalls;stats.triangles+=m.count/3;}
     void plane(const gpu::Texture&t,const Matrix&head,float x,float y,float z,float w,float h,float alpha=1){draw(unitQuad,t,gpu::multiply(head,gpu::transform(x,y,z,0,w,h,1)),1,0,1,alpha);}
     void eye(const RenderView&view){
@@ -205,9 +216,9 @@ struct Renderer::Impl {
         if(panel.kind==Panel::Gameplay||panel.kind==Panel::Pause){
             glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);draw(sky,texture("textures/sky/backdrop.png"),gpu::transform(view.headWorld[12],view.headWorld[13],view.headWorld[14]),1,3);glDepthMask(GL_TRUE);glEnable(GL_DEPTH_TEST);
             draw(walls,wallAtlas,Identity,view.worldScale,1,1,1,&wallPalette);draw(floors,floorAtlas,Identity,view.worldScale,2,1,1,&floorPalette);
-            for(const auto&a:actors){float shade=a.additive?1:std::clamp(1-a.bright/100.f,.15f,1.f);if(a.vector){auto*m=model(a.model,a.frame);if(m)draw(*m,texture("textures/texturemaps_atlas.png"),gpu::transform(a.x,a.y,a.z,(4096-a.angle)*2*Pi/8192,.5f,.5f,.5f),view.worldScale,0,shade);}else{auto&t=sprite(a);float yaw=std::atan2(view.headWorld[12]/view.worldScale-a.x,view.headWorld[14]/view.worldScale-a.z);auto matrix=gpu::transform(a.x,a.y,a.z,yaw,(a.flip?-1:1)*a.width,a.height,1);if(a.additive){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);glDepthMask(GL_FALSE);}draw(unitQuad,t,matrix,view.worldScale,0,shade);if(a.additive){glDisable(GL_BLEND);glDepthMask(GL_TRUE);}}}
+            for(const auto&a:actors){float shade=a.additive?1:std::clamp(1-a.bright/100.f,.15f,1.f);if(a.vector){auto*m=model(a.model,a.frame);if(m){glUniform1fv(loc("polyLight"),256,a.poly.data());glUniform1i(loc("objectAngle"),a.angle);draw(*m,texture("textures/texturemaps_atlas.idx.png"),gpu::transform(a.x,a.y,a.z,(4096-a.angle)*2*Pi/8192,.5f,.5f,.5f),view.worldScale,6,1,1,&floorPalette);}}else{auto&t=sprite(a);float yaw=std::atan2(view.headWorld[12]/view.worldScale-a.x,view.headWorld[14]/view.worldScale-a.z);auto matrix=gpu::transform(a.x,a.y,a.z,yaw,(a.flip?-1:1)*a.width,a.height,1);if(a.additive){glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE);glDepthMask(GL_FALSE);}if(a.lighted){float horizontal=std::max(.001f,std::hypot(view.headWorld[8],view.headWorld[10]));float depth=((a.x*view.worldScale-view.headWorld[12])*-view.headWorld[8]+(a.z*view.worldScale-view.headWorld[14])*-view.headWorld[10])/(view.worldScale*horizontal);int engineDepth=int(std::max(0.f,depth)*64);if(spriteFullscreen)engineDepth=(engineDepth*927)>>10;int angle=int(std::lround(std::atan2(-view.headWorld[8],view.headWorld[10])*8192/(2*Pi)))&8190;auto groups=lighting::sprite(a.ring,angle,int16_t(int(a.bright)+(engineDepth>>6)),a.flip,guff);glUniform1fv(loc("groupLight"),29,groups.data());glUniform1i(loc("spritePalette"),a.palette-2);draw(unitQuad,t,matrix,view.worldScale,7,1,1,&textures.at(spritePalettes.at(a.model)));}else draw(unitQuad,t,matrix,view.worldScale,0,shade);if(a.additive){glDisable(GL_BLEND);glDepthMask(GL_TRUE);}}}
             if(water.count){copyScene();glDepthMask(GL_TRUE);draw(water,floorAtlas,Identity,view.worldScale,4,1,1,&texture("textures/water_shade.lut.png"));}
-            if(hasWeapon){auto*m=model(weapon.model,weapon.frame);float yaw=(4096-weapon.angle+playerAngle)*2*Pi/8192;Matrix mount=view.trackedWeapon?view.weaponWorld:gpu::multiply(view.headWorld,gpu::transform(.12f,-.25f,-.32f));Matrix matrix=gpu::multiply(mount,gpu::transform(weaponMount.x,weaponMount.y,0,yaw,.22f,.22f,.22f));if(m){draw(*m,texture("textures/texturemaps_atlas.png"),matrix,1);++stats.weaponDraws;if(view.trackedWeapon&&panel.kind==Panel::Gameplay){
+            if(hasWeapon){auto*m=model(weapon.model,weapon.frame);float yaw=(4096-weapon.angle+playerAngle)*2*Pi/8192;Matrix mount=view.trackedWeapon?view.weaponWorld:gpu::multiply(view.headWorld,gpu::transform(.12f,-.25f,-.32f));Matrix matrix=gpu::multiply(mount,gpu::transform(weaponMount.x,weaponMount.y,0,yaw,.22f,.22f,.22f));if(m){glUniform1fv(loc("polyLight"),256,weapon.poly.data());glUniform1i(loc("objectAngle"),weapon.angle);draw(*m,texture("textures/texturemaps_atlas.idx.png"),matrix,1,6,1,1,&floorPalette);++stats.weaponDraws;if(view.trackedWeapon&&panel.kind==Panel::Gameplay){
                 // A physical 28 cm segment on the exact tracked -Z aim ray.
                 // Begin just beyond conservative original-mesh muzzle bounds
                 // so it is visible without disabling world/weapon depth.

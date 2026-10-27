@@ -33,18 +33,21 @@ unsigned program(){
     const char*vs=R"(#version 330 core
 layout(location=0)in vec3 position;layout(location=1)in vec2 texcoord;layout(location=2)in vec3 lightSource;
 layout(location=3)in vec4 region;layout(location=4)in vec3 tile;
-uniform mat4 vp,model;uniform float scale;uniform int mode;uniform sampler2D points;
+uniform mat4 vp,model;uniform float scale;uniform int mode,objectAngle;uniform float polyLight[256];uniform sampler2D points;
 out vec2 uv;out float bright;out vec3 world;flat out vec4 rect;flat out vec3 subtile;
 void main(){vec4 p=model*vec4(position,1);p.xyz*=scale;world=p.xyz;gl_Position=vp*p;if(mode==3)gl_Position=gl_Position.xyww;uv=texcoord;rect=region;subtile=tile;bright=0;
-if(lightSource.x>=0){float raw=abs(texelFetch(points,ivec2(int(lightSource.y),int(lightSource.x)),0).r)-300+lightSource.z;
+if(mode==6){int a=int(region.x);int sector=(a+(objectAngle>>9))&15;bright=clamp(lightSource.z+polyLight[(a&240)+sector],0.0,31.0);}
+else if(lightSource.x>=0){float raw=abs(texelFetch(points,ivec2(int(lightSource.y),int(lightSource.x)),0).r)-300+lightSource.z;
 bright=mode==1?2*(mod(raw+128,256)-128):raw;}})";
     const char*fs=R"(#version 330 core
 in vec2 uv;in float bright;in vec3 world;flat in vec4 rect;flat in vec3 subtile;out vec4 color;
-uniform sampler2D image,palette,waves,scene;uniform sampler3D paletteIndex;uniform vec4 viewport;uniform float waterPhase,waterScroll,waterAngle;uniform int mode;uniform float shade,opacity,worldScale;uniform vec4 tint;uniform vec3 camera,forward;
+uniform sampler2D image,palette,waves,scene;uniform float groupLight[29];uniform int spritePalette;uniform sampler3D paletteIndex;uniform vec4 viewport;uniform float waterPhase,waterScroll,waterAngle;uniform int mode;uniform float shade,opacity,worldScale;uniform vec4 tint;uniform vec3 camera,forward;
 void main(){vec4 sampleColor;float depth=max(0,dot(world-camera,forward))/max(.001,worldScale);
 if(mode==1||mode==2){ivec2 at=ivec2(rect.xy+vec2(mod(floor(fract(uv.x)*subtile.y)+subtile.x,rect.z),floor(fract(uv.y)*rect.w)));
 float index=floor(texelFetch(image,at,0).r*255+.5);float bank=mode==1?min(31,ceil(clamp(mod(bright+128,256)-128+floor(depth*.5),0,64)*.5)):clamp(floor(bright+floor(depth*.125)),0,30);
 ivec2 size=textureSize(palette,0);sampleColor=texelFetch(palette,ivec2(int(index),int(bank+subtile.z*32)),0);
+}else if(mode==6){vec4 texel=texture(image,uv);if(texel.a<.5)discard;sampleColor=texelFetch(palette,ivec2(int(floor(texel.r*255.0+.5)),int(floor(bright))),0);
+}else if(mode==7){vec4 texel=texture(image,uv);if(texel.a<.5)discard;int index=int(floor(texel.r*255.0+.5)),group=index>>3;int at=group<29&&((index&7)!=0)?int(groupLight[group])*8+(index&7):0;sampleColor=texelFetch(palette,ivec2(at,spritePalette),0);
 }else if(mode==3)sampleColor=texture(image,vec2(fract(uv.x),clamp(uv.y,0.0,1.0)));
 else if(mode==4||mode==5){
  vec2 screen=(gl_FragCoord.xy-viewport.xy)/viewport.zw;float row=0.0;

@@ -69,10 +69,37 @@ half-turn repeat, water phase changes, underwater treatment and arbitrary
 framebuffer preservation, depth-occluded aim guides and every original
 held weapon animation with a stable physical muzzle socket.
 
-Current fidelity limits: polygon/sprite materials use original color PNGs
-with object-brightness attenuation, rather than the full directional light
-rings and per-face shaded palette pipeline. Water color reindexing uses nearest palette colors on a 64-cubed grid,
-so close/duplicate original colors and non-palette actor shading can map
+Directional actors and panels
+-----------------------------
+lighting.hpp ports the original read-only CalcBrightsInZone, CalcBrightRings,
+TweenBrights, flat polygon-angle table, and HQN sprite guff/willy color-group
+math. Rings follow animated signed point brightness, the original border-list
+spill into subsequent zones, portal neighbors, solid wall normals and upper
+zones. sync snapshots these from parked RAM without touching original scratch
+registers or simulation. Original polygon .lvl face base/angle records and
+indexed texturemaps atlas use the original resident palette in GLSL. HQN enemy
+sprites retain original indices, all four shade palettes and the original 29
+groups of eight colors. Per-view head yaw/depth chooses source group levels;
+only small uniform arrays change, and sprite pixels/palettes stay in VRAM.
+
+The independent optional development oracle is lighting-check.cpp plus
+lighting-reference.py. The script compiles unchanged LightRings/SpriteLight
+source from reference/java-host-audit in a temporary directory; it is not a
+native build/install/runtime dependency. All 7,880 original actor/zone positions
+across all 16 levels, lower/upper zones, full/sprite-only rings, six brightness
+ranges, both flip directions and the original flat polygon-angle table match
+4,397,040 source-result bytes exactly.
+
+Panel text measures original glyph widths and fits each caption/narrative line
+inside 1.94 physical metres of the 2.24m panel. Existing menu text retains its
+normal size; original 80-character stories stay inside the same panel.
+
+Current fidelity limits: polygon shading uses the original flat-face path;
+per-vertex Gouraud/glare face flags were not included in the current extracted
+OBJ sidecars. Generic packed 5-bit sprites still use color PNG attenuation;
+additive effects use GPU blending rather than original palette-compositing.
+Water color reindexing uses nearest palette colors on a 64-cubed grid, so close
+or duplicate original colors and remaining non-palette effects can map
 ambiguously; screen displacement is scaled from the original 240-line
 projection. Bump/special material effects are not implemented yet.
 The original game state, mechanisms and gameplay are not replaced by these
