@@ -47,6 +47,9 @@ void queueFromPaula(){if(!backend.enabled.load())return;std::lock_guard lock(bac
  if(SDL_AudioStreamPut(backend.stream,pcm.data(),sizeof(pcm))<0){++backend.counters.queueFailures;return;}
  for(int available;(available=SDL_AudioStreamAvailable(backend.stream))>0;){std::vector<unsigned char> converted(available);int bytes=SDL_AudioStreamGet(backend.stream,converted.data(),available);if(bytes<=0)break;if(SDL_QueueAudio(backend.device,converted.data(),bytes)!=0){++backend.counters.queueFailures;break;}backend.counters.outputFrames+=bytes/(backend.obtained.channels*(SDL_AUDIO_BITSIZE(backend.obtained.format)/8));}
 }
-void stop(){std::lock_guard lock(backend.mutex);closeDevice();}
+void reset(bool resume){std::lock_guard lock(backend.mutex);if(backend.device)SDL_ClearQueuedAudio(backend.device);if(backend.stream)SDL_AudioStreamClear(backend.stream);backend.channels={};
+ if(resume)for(int ch=0;ch<4;++ch)if(CustomChips::dmacon&(1<<ch)){auto&channel=backend.channels[ch];bool trigger=CustomChips::dmaTrig[ch];channel.address=trigger?CustomChips::dmaLC[ch]:CustomChips::audLC[ch];channel.length=trigger?CustomChips::dmaLEN[ch]:CustomChips::audLEN[ch];channel.active=channel.address>0&&channel.length>0;}
+}
+void stop(){std::lock_guard lock(backend.mutex);closeDevice();backend.channels={};}
 Stats stats(){std::lock_guard lock(backend.mutex);auto result=backend.counters;result.enabled=backend.enabled.load();result.active=backend.device!=0;result.queuedBytes=backend.device?SDL_GetQueuedAudioSize(backend.device):0;return result;}
 }

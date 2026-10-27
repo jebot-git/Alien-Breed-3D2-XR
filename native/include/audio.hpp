@@ -9,6 +9,9 @@ void setEnabled(bool enabled);
 bool ensureStarted();
 bool needsBuffer();
 void queueFromPaula();
+// Park the worker first. Clear queued old-level audio, then optionally latch
+// restored active Paula registers (sample phase restarts at the current loop).
+void reset(bool resume=true);
 void stop();
 Stats stats();
 }
