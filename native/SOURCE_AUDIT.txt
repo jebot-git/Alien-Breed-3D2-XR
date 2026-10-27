@@ -1,0 +1,77 @@
+ALIEN BREED 3D II XR — ORIGINAL ENGINE AUDIT
+2026-10-27
+
+Decision
+Build the XR product in native C++. There is no JVM, Java UI or Java runtime
+in the product. The original Amiga source history is the active branch's base.
+The literal translation is an offline reference for moving the original fixed-
+point gameplay into C++, preserving big-endian layouts and 50 Hz PAL timing.
+Do not use the independent Rebirth simulation for movement, combat, pickups,
+secrets, AI, lifts, doors or campaign progression.
+
+The abandoned Java GPU prototype is retained only on reference/java-host-audit
+(commit e52ddd7); its tests are reference evidence, not native-port validation.
+Native migration sources, host and validation live under native/. The migration
+helper is optional; normal CMake builds use checked-in C++ and require no Java.
+
+Sources examined
+* Team17 original / maintained Amiga source:
+  https://github.com/mheyer32/alienbreed3d2
+  86abb5c5b28cbab874e46b96c94b93b51bff56ec
+  ../Alien-Breed-3D2-Source/ab3d2_source
+* Literal Java translation:
+  https://github.com/guillaumemonet/ab3d2-tkg-java
+  3090d9f59b603816e7cc94960c332204ce94f259
+  used only as a migration/reference source, not a product dependency.
+* OpenGL presentation/importer base (history preserved):
+  https://github.com/guillaumemonet/ab3d2-tkg-rebirth
+  dd1fbd1ed04fdb12347c41aeb77e8a2af83fb08a
+* Vulkan RTX module:
+  https://github.com/retro-foundry/alienbreed3d2-rtx-renderer
+  Only the renderer is public; it requires a separate private game host.
+* https://github.com/retro-foundry/amiga-recomp
+  Its published host covers synthetic MC68000 demos, not the game's 68020+
+  instruction set, AmigaOS/ADF services, input/audio or playable AB3DII.
+* OpenXR GPU presentation library:
+  https://github.com/oneMillionWorlds/Tamarin
+  Maven com.onemillionworlds:tamarin:3.2.2, BSD-3-Clause.
+
+Why not compile the original C directly?
+The C covers platform, preferences, PVS and integration. Core gameplay remains
+680x0 assembly (player.s, newplayershoot.s, newaliencontrol.s, objectmove.s,
+newanims.s). The original Makefile requires m68k-amigaos-gcc, vasm and Amiga NDK.
+A native host would still need translation/recompilation and the platform shim.
+The literal Java translation already supplies these, with big-endian memory and
+680x0 arithmetic semantics, rather than executing an emulated Amiga CPU.
+
+Unfinished host seam found and corrected
+Hires.headless previously skipped loop_DrawPlayer1/2 entirely. Those routines
+also call Newanims.objmoveanim and populate original aiming/visibility tables.
+The XR host now keeps these calls and stops DrawDisplay only after transforms
+and aiming-table preparation, before software pixel drawing. Original gameplay
+advances one PAL tick per released barrier, independent of display refresh.
+The original end-level music also participates in the barrier, with an exposed
+presentation phase, rather than blocking the GPU host for seconds.
+
+FileIo.unLHA was an unwired stub. It now uses the existing =SB= decoder, checks
+source/output sizes, and copies the decoded bytes into the allocated game block.
+This restores the source-tree packed level/music loading path.
+
+Data warning
+The maintained source media contains development maps. Its level A has only ten
+zones, whereas retail A has 134. Tests and extracted game assets use the retail
+preservation disks, not that development level.
+https://dream17.abime.net/download.php?id=50
+Archive SHA256: 981f9850db9b7b3e81a07db90a0006ec1dc05550dbdb31f40590ffe1ff7afb40
+Disks and generated textures/models are local ignored data, not committed.
+
+Reference evidence (before the native C++ migration)
+* All 16 retail levels: original-engine movement/firing smoke test, 80 PAL ticks.
+* Native Wayland OpenGL 4.6 on Intel Arc A770; original room, textures, pickups,
+  original animated polygon weapon; no world framebuffer upload/software raster.
+* Headset validation remains pending. Desktop screenshots are not XR evidence.
+
+Provenance
+Native additions under native/. Original source and reference authors retain
+their credits. No additional license is asserted over the original game/data or
+vendored upstream code. Tamarin retains its own dependency license.

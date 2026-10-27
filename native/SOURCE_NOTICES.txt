@@ -1,0 +1,17 @@
+Original game: Alien Breed 3D II: The Killing Grounds, Team17.
+Original maintained source: https://github.com/mheyer32/alienbreed3d2
+Base revision: 86abb5c5b28cbab874e46b96c94b93b51bff56ec
+
+The checked-in native gameplay routines retain the original source's structure,
+labels, data formats and arithmetic. The literal translation at
+https://github.com/guillaumemonet/ab3d2-tkg-java
+(revision 3090d9f59b603816e7cc94960c332204ce94f259) was used as an offline migration
+and validation reference. It is not a Java dependency of the native product.
+
+The Rebirth extractor and GPU prototype were inspected as reference material:
+https://github.com/guillaumemonet/ab3d2-tkg-rebirth
+(revision dd1fbd1ed04fdb12347c41aeb77e8a2af83fb08a).
+
+Original authors retain their credits. No additional license is asserted over
+original game code, data, third-party reference code or artwork. Original disks,
+extracted media, developer reference states and toolchains are not committed.

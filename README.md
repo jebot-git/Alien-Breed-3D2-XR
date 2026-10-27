@@ -1,3 +1,11 @@
+# DomeD native C++ XR port
+
+Native port work and its current validation are documented in
+[native/README.md](native/README.md). The CMake build uses C++ without a JVM.
+The original Amiga source and documentation remain below and in this tree.
+
+---
+
 # Alien Breed 3D II The Killing Grounds 
 
 This repo contains a compileable version of the Alien Breed 3D II source.
