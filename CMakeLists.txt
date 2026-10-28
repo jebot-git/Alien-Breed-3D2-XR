@@ -121,3 +121,10 @@ if(EXISTS "${AB3D2_ORIGINAL_LEVELS}/LEVEL_A/twolev.bin" AND EXISTS "${CMAKE_SOUR
  endif()
 endif()
 install(FILES native/render/ORIGINAL_CONTENT_AND_LIGHTING.txt DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(DIRECTORY native/assets/icons/hicolor/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor)
+install(FILES native/assets/icons/hicolor/256x256/apps/alien-breed3d2-xr.png DESTINATION ${CMAKE_INSTALL_DATADIR}/alien-breed3d2-xr RENAME icon.png)
+install(FILES native/assets/icons/README.md DESTINATION ${CMAKE_INSTALL_DOCDIR} RENAME icon-NOTICE.md)
+if(EXISTS "${CMAKE_SOURCE_DIR}/assets/native/manifest.json")
+ # Local source runs use the same icon as the staged/installed application.
+ configure_file(native/assets/icons/hicolor/256x256/apps/alien-breed3d2-xr.png ${CMAKE_SOURCE_DIR}/assets/icon.png COPYONLY)
+endif()

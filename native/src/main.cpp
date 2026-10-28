@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <png.h>
 #include <set>
 using namespace ab3d2;
 namespace fs = std::filesystem;
@@ -112,6 +113,26 @@ fs::path assetsPath(const Options &opt, const char *argv0) {
     if (fs::is_regular_file(root / "native/manifest.json"))
       return fs::weakly_canonical(root);
   throw std::runtime_error("Original game data not found; use --assets PATH");
+}
+void windowIcon(SDL_Window *window, const fs::path &path) {
+  png_image image{};
+  image.version = PNG_IMAGE_VERSION;
+  if (!png_image_begin_read_from_file(&image, path.c_str())) {
+    std::cerr << "Window icon unavailable: " << path << "\n";
+    return;
+  }
+  image.format = PNG_FORMAT_RGBA;
+  std::vector<unsigned char> rgba(PNG_IMAGE_SIZE(image));
+  if (png_image_finish_read(&image, nullptr, rgba.data(), 0, nullptr)) {
+    auto *surface = SDL_CreateRGBSurfaceWithFormatFrom(
+        rgba.data(), image.width, image.height, 32, image.width * 4,
+        SDL_PIXELFORMAT_RGBA32);
+    if (surface) {
+      SDL_SetWindowIcon(window, surface);
+      SDL_FreeSurface(surface);
+    }
+  }
+  png_image_free(&image);
 }
 struct Window {
   SDL_Window *window = nullptr;
@@ -213,6 +234,7 @@ int main(int argc, char **argv) {
       SDL_setenv("SDL_VIDEODRIVER", "wayland", 0);
     tempest::DomeLink dome(launch);
     Window surface(vr);
+    windowIcon(surface.window, assetsPath(opt, argv[0]) / "icon.png");
     Runtime game(assetsPath(opt, argv[0]));
     game.loadLevel(opt.level);
     Renderer renderer;

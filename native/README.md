@@ -92,8 +92,14 @@ DESTDIR="$PWD/artifacts/stage" cmake --install build-native
 
 This stages the native executable, launcher, desktop entry, local data pack
 and notices under `/usr/local`. The staged launcher contains the final system
-paths. Only copying staged system files requires sudo; builds and checks do
-not. No desktop/display-manager service is restarted.
+paths. The authored transparent icon is installed in hicolor sizes16..1024
+and used by the desktop entry and SDL window. Its master and generation prompt
+are under `native/assets/icons`.
+
+After verification, install with `sudo -A sh native/tools/install-system.sh
+"$PWD/build-native"` and an appropriate `SUDO_ASKPASS` helper. Only the install
+step requires sudo; builds and checks do not. No desktop/display-manager
+service is restarted.
 
 The optional offline migration tools are development references, not build or
 runtime dependencies. See `SOURCE_AUDIT.txt` and `SOURCE_NOTICES.txt` for exact
