@@ -385,6 +385,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateVector2f(XrSession, const XrActio
     out->isActive = XR_TRUE;
     out->currentState = {0, 0};
     if (std::getenv("ABXR_TEST_MENU")) {
+        // Real sticks cross the release band before reaching selection. The
+        // earlier latch-at-.3 bug passed instantaneous synthetic deflections.
+        if (info->subactionPath == path("/user/hand/left") && frame==17)
+            out->currentState.y=-.4f;
         if (info->subactionPath == path("/user/hand/left") &&
             (frame == 18 || frame == 32 || frame == 46 || frame == 60 || frame == 86 || frame==100))
             out->currentState.y = -1;
