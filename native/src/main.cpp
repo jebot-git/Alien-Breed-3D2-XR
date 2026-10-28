@@ -3,6 +3,7 @@
 #include "controls.hpp"
 #include "domed.hpp"
 #include "math.hpp"
+#include "menu_input.hpp"
 #include "render.hpp"
 #include "runtime.hpp"
 #include "xr.hpp"
@@ -248,9 +249,8 @@ int main(int argc, char **argv) {
     bool paused = false, quit = false, armed = opt.testPlay,
          smooth = preferences.value("smooth_turn", true),
          twoHand = preferences.value("two_hand", true), snapReady = true,
-         menuBefore = false, selectBefore = false, navBefore = false,
-         prevBefore = false, nextBefore = false, mouseFire = false,
-         pendingContinue = false;
+         menuBefore = false, selectBefore = false, prevBefore = false,
+         nextBefore = false, mouseFire = false, pendingContinue = false;
     const auto story = readJson(assetsPath(opt, argv[0]) / "menu/story.json");
     size_t endingPage = 0;
     int selected = 0, titleSelected = 0, selectedLevel = opt.level, frame = 0;
@@ -265,6 +265,7 @@ int main(int argc, char **argv) {
     uint64_t last = SDL_GetPerformanceCounter();
     Matrix stageWorld = Identity, headWorld = Identity, weaponWorld = Identity;
     bool trackedWeapon = false, hadXRFocus = false;
+    MenuInput menuInput;
     auto panel = [&]() {
       Panel out;
       if (paused) {
@@ -515,14 +516,13 @@ int main(int argc, char **argv) {
       if (!activate && !jump && !previous && !next && std::abs(moveF) < .1f &&
           std::abs(moveR) < .1f && std::abs(turn) < .1f)
         armed = true;
-      if ((paused || page == Title) && std::abs(nav) > .6f && !navBefore) {
-        int change = nav > 0 ? -1 : 1;
+      if (int change = menuInput.update(nav, dt, paused || page == Title)) {
         if (paused)
           selected = (selected + change + 9) % 9;
         else
           titleSelected = (titleSelected + change + 5) % 5;
       }
-      navBefore = std::abs(nav) > .3f;
+
       if (activate && !selectBefore && armed) {
         if (paused) {
           switch (selected) {

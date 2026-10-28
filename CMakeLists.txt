@@ -107,3 +107,6 @@ if(AB3D2_BUILD_GPU_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/assets/native/manifest.
   -P ${CMAKE_SOURCE_DIR}/native/tests/check-xr.cmake)
  set_tests_properties(NativeXRMenus PROPERTIES RUN_SERIAL TRUE)
 endif()
+add_executable(ab3d2-menu-input-test native/tests/menu-input.cpp)
+target_include_directories(ab3d2-menu-input-test PRIVATE native/include)
+add_test(NAME NativeMenuGradualStick COMMAND ab3d2-menu-input-test)
