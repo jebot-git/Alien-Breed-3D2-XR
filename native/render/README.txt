@@ -83,8 +83,8 @@ groups of eight colors. Per-view head yaw/depth chooses source group levels;
 only small uniform arrays change, and sprite pixels/palettes stay in VRAM.
 
 The independent optional development oracle is lighting-check.cpp plus
-lighting-reference.py. The script compiles unchanged LightRings/SpriteLight
-source from reference/java-host-audit in a temporary directory; it is not a
+lighting-reference.py. The script compiles the preserved LightRings/SpriteLight
+source with an explicit assembly-semantics correction in a temporary directory; it is not a
 native build/install/runtime dependency. All 7,880 original actor/zone positions
 across all 16 levels, lower/upper zones, full/sprite-only rings, six brightness
 ranges, both flip directions and the original flat polygon-angle table match
@@ -105,3 +105,7 @@ projection. Bump/special material effects are not implemented yet.
 The original game state, mechanisms and gameplay are not replaced by these
 presentation approximations. Headset ergonomics, physical scaling and comfort
 still require testing; no physical headset is used by the isolated GPU check.
+
+See ORIGINAL_CONTENT_AND_LIGHTING.txt for direct assembly verification,
+CurrentPointBrights integration, all 16 raw placement/mechanism counts and
+precise remaining rendering/secret-route validation limits.

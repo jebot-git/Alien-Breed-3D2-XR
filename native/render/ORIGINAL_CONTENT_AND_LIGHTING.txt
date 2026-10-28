@@ -1,0 +1,141 @@
+Original content and lighting audit (all 16 retail levels)
+========================================================
+
+Sources
+-------
+Maintained original/Rebuilt engine: mheyer32/alienbreed3d2, commit 86abb5c.
+https://github.com/mheyer32/alienbreed3d2
+Rebuilt is this engine's informal name. Redux is a separate modification of
+maps/art and is not substituted for the original retail campaign. The public
+main branch was still 86abb5c when checked for this audit.
+
+Assembly inspected directly:
+- ab3d2_source/objdrawhires.s: draw_ResetAngleBrights, draw_CalcBrightsInZone,
+  draw_CalcBrightRings, draw_TweenBrights, draw_bitmap_lighted and polygon tables.
+- ab3d2_old_source/source_4000/objdrawhires.s: original CALCBRIGHTRINGS,
+  including MOVEQ/MOVE.B/NEG.W and signed-condition combination.
+- ab3d2_source/hires.s: level header/table setup and hazardous floor fix.
+- ab3d2_source/newanims.s: liftable wall patches, conditions and switch behavior.
+The corresponding native gameplay remains authoritative for actors/triggers.
+
+Concrete rendering fixes
+------------------------
+1. Ring combination now zero-extends neighbor bytes before word negation,
+   matching MOVEQ #0 / MOVE.B / NEG.W. BLE after SUB.B also observes signed
+   overflow: compare signed operands before storing the wrapped byte. The
+   earlier Java intermediary sign-extended the byte and ignored overflow.
+   A test-only interpreter executes the actual assembly block directly, with
+   68000 N/Z/V flags, over 7,880 retail positions and 65,536 exhaustive operand
+   pairs. All match. The correction changes zero initial retail positions;
+   it fixes high-bit/unset and overflow edge cases without inventing lighting.
+
+2. Lighting now preserves the core's initialized CurrentPointBrights for the
+   current PVS. This includes original projectile/activation brightening and
+   darkening that were lost by recomputing only base light in the renderer.
+   Untouched zones needed by the wider stereo view and initial uninitialized
+   snapshots retain the original base/animation reconstruction as fallback.
+   The renderer never writes the core's current brightness or scratch RAM.
+
+3. The original inclusive point-table tail is retained when copying lighting
+   points. hires.s locates brightness at points+(headerNumPoints+1)*4. All 16
+   retail tails are reserved(0,0), and no wall or zone border references them.
+   JSON contains the preceding actual points; no placed decoration is missing
+   due to this reserved tail. Object CID indexes are checked inclusively too.
+
+Validation boundaries: the combine loop is executed from actual assembly;
+ring construction, flat polygon-angle tables and HQN guff/willy groups are
+also checked against a source reference corrected specifically for the two
+assembly semantics above. That comparison covers 4,397,040 result bytes at
+7,880 positions, lower/upper layers, full/sprite-only rings, six brightness
+ranges and both flip states. It does not establish full pixel identity with
+an Amiga framebuffer. Original per-vertex Gouraud/glare flags, packed 5-bit
+sprite palette attenuation, additive palette compositing and bump/special
+materials remain rendering limitations. Water reindexing is quantized to a
+64-cubed nearest-color palette lookup. Headset contrast still needs testing.
+
+Original campaign preservation
+------------------------------
+content-audit.py reads uncompressed original twolev.bin/twolev.graph.bin,
+checks extracted scene tables and authoritative native startup RAM, and
+emits per-level counts, hashes, placements and mechanism condition masks.
+It checks all original CID x/z positions, zones/layers, definitions, own
+brightness, lock masks and message IDs; doors/lifts include every original
+wall patch offset and texture-base value. No placements are inferred or moved.
+
+Level  Records Enemies Collectable-class Activatable Doors Lifts
+ 1       143      22        30               0        11     1
+ 2       179      37        21               0         0     0
+ 3       184      31        45               1        12     1
+ 4       105      11        20               0         6     8
+ 5       214      42        58               1        11     0
+ 6       204      36        53               1         9     1
+ 7       227      52        32               3         1     4
+ 8       129       6        54               0         1     0
+ 9       215      56        36               0         7     5
+10       269      76        46               1        10     8
+11       211      43        48               2        13    16
+12       188      20        85               0         1     0
+13       258      69        48               1         9     6
+14       259      64        53               1        16     5
+15       315      54       137               0        11     6
+16       124       5        51               0         1     0
+Totals  3224     624       817              11       119    61
+
+Additional totals: 624 auxiliary records, 133 decorations, 7 destructibles,
+960 reserved projectile records (60 per map), 48 player/held-weapon slots,
+416 door/lift wall patches, 16 exits, 53 teleport zones, 87 lock-holding items,
+and 82 object message references. Collectable-class includes original
+invisible/narrative markers; it is not a claim of 817 tangible pickups.
+
+All original placement and liftable fields match. The 16 legacy 8-slot wall
+switch tables contain no active entries. The 11 activatable entities include
+original KnifeSwitch/Charger behavior; they are not replaced by invented
+wall-switch records. All 16 exit zones and teleport destinations are valid.
+Condition masks and lock-holding entity masks are preserved in the report.
+
+Startup RAM matches the independent original reference for every actor
+record/point, including 66 records changed by original startup/AI: 48 reserved
+player/held slots plus 18 enemy/auxiliary position records in levels 4/16.
+The renderer uses these authoritative live records, never stale JSON actor
+coordinates. Sleeping zero-size sprites remain invisible until original AI
+initializes them. The largest table has 315 records; subtracting 60 embedded
+projectile records leaves 255, below the original 288 distance-list capacity.
+The 288 limit belongs to the old CPU distance list, not actor storage. The
+renderer's 2000-record emergency sentinel guard does not truncate original
+records at that smaller CPU-renderer limit.
+
+Rebuilt fixes already inherited
+------------------------------
+- floorDamage preserves the assembly fix for issue #1: damage only while the
+  feet contact the floor or while swimming in the hazardous liquid volume;
+  flying above it avoids damage. No new gameplay reinterpretation was added.
+- Door/lift patch offsets and source horizontal texture offsets are retained,
+  including the Rebuilt fix allowing patches away from a texture's left edge.
+- Original condition masks, activation, key locks, zone exits and AI routing
+  stay in the original native gameplay core. The existing 16 reference tests
+  compare every actor over 80 movement/firing ticks, not just player motion.
+No newer upstream change was needed at the audited main revision.
+
+Limitations: this is preservation/data and bounded execution verification,
+not a complete campaign playthrough or a proof that every secret can be
+reached in XR. The format has no universal secret-placement flag; hidden
+routes depend on original locks, activations, geometry and messages, all
+retained. No enemy/item relocation or invented secret was justified.
+
+Reproduction (regular user, from repository root)
+------------------------------------------------
+python3 native/render/tests/content-audit.py assets medias/original/levels artifacts/native-content-audit.json
+
+c++ -std=c++20 -O2 -I native/include -I native/src/core -I native/render native/render/tests/lighting-check.cpp -o /tmp/ab2-lighting-check
+/tmp/ab2-lighting-check assets artifacts/native-oracle /tmp/ab2-lighting-input.bin /tmp/ab2-lighting-native.bin /tmp/ab2-lighting-asm-pairs.bin
+python3 native/render/tests/lighting-asm-check.py ab3d2_source/objdrawhires.s /tmp/ab2-lighting-asm-pairs.bin
+
+Optional development-source comparison (requires a local development JDK,
+never used by native application/build/install):
+python3 native/render/tests/lighting-reference.py /tmp/ab2-lighting-input.bin /tmp/ab2-lighting-native.bin
+AB3D2_TEST_JAVAC/AB3D2_TEST_JAVA may select that optional toolchain.
+
+Release CTests and optional GPU tests cover all 16 scenes, immutable original
+RAM, stereo parallax, live door/lift meshes, sky/water, original weapon frames,
+depth-occluded guides, real indexed lighting response and long narrative fit.
+No headset, installation, publication or session restart is part of this audit.

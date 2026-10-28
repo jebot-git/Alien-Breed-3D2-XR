@@ -20,7 +20,22 @@ with tempfile.TemporaryDirectory(prefix="ab3d2-light-oracle-") as tmp:
     sim.mkdir(parents=True)
     source = subprocess.check_output(
         ["git", "show", "reference/java-host-audit:src/ab3d2/rebirth/LightRings.java"], cwd=root)
-    (package / "LightRings.java").write_bytes(source)
+    # The preserved intermediary sign-extends MOVE.B before NEG.W, and models
+    # BLE after SUB.B without the 68000 overflow flag. Correct only that block
+    # against ab3d2_source/objdrawhires.s; lighting-asm-check executes its actual
+    # assembly instructions independently over every possible operand byte.
+    source = source.decode()
+    start = source.index("        for (int i = 0; i < 16; i++)", source.index("// Combinaison finale"))
+    end = source.index("    }", start)
+    # This loop has nested conditionals; terminate at the following method doc.
+    end = source.index("\n    /**", start)
+    source = source[:start] + """        for(int i=0;i<16;i++)for(int height:new int[]{0,16}){
+            int limit=(48-(ring[32+height+i]&255))>>1, current=ring[height+i];
+            ring[height+i]=current>=limit?(byte)(current-limit):0;
+        }
+    }
+""" + source[end:]
+    (package / "LightRings.java").write_text(source)
     (package / "SpriteLight.java").write_bytes(subprocess.check_output(
         ["git", "show", "reference/java-host-audit:src/ab3d2/rebirth/SpriteLight.java"], cwd=root))
     original = subprocess.check_output(
@@ -95,4 +110,4 @@ public class Oracle {
     if wanted != actual:
         differences = [(i, a, b) for i, (a, b) in enumerate(zip(wanted, actual)) if a != b]
         raise SystemExit(f"Lighting mismatch: {len(differences)} bytes, first {differences[:12]}; lengths {len(wanted)}/{len(actual)}")
-    print(f"PASS unchanged source oracle: {len(actual) // 558} original positions, all 16 levels, {len(actual)} ring, original flat-face table and indexed color-group bytes")
+    print(f"PASS assembly-corrected source oracle: {len(actual) // 558} original positions, all 16 levels, {len(actual)} ring, original flat-face table and indexed color-group bytes")

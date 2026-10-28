@@ -29,7 +29,14 @@ inline void tween(Rings&r,int base){
   for(int i=0;i<gap;++i){r[base+previous]=int8_t(accumulator>>16);accumulator+=step;previous=(previous+1)&15;}previous=current;
  }while(current!=start);
 }
-inline Rings rings(const nlohmann::json&level,const std::vector<float>&brightness,const std::vector<std::array<int,2>>&points,const std::array<int16_t,5120>&sine,int x,int z,int zone,bool upper=false,bool zoneOnly=false){
+inline void combine(Rings&r){
+ // MOVEQ #0 / MOVE.B zero-extends neighbor bytes before NEG.W. BLE after
+ // SUB.B tests signed overflow as well as N/Z: compare the signed operands
+ // before storing the wrapped result. A sign-extended Java intermediary lost
+ // both details for unset/high-bit ring entries.
+ for(int i=0;i<16;++i)for(int height:{0,16}){int limit=(48-int(uint8_t(r[32+height+i])))>>1;int current=r[height+i];r[height+i]=current>=limit?int8_t(current-limit):0;}
+}
+inline Rings rings(const nlohmann::json&level,const std::vector<float>&brightness,const std::vector<std::array<int,2>>&points,const std::array<int16_t,5120>&sine,int x,int z,int zone,bool upper=false,bool zoneOnly=false,bool preCombine=false){
  Rings r;r.fill(-128);auto&zones=level["zones"];
  auto fill=[&](int zi,int base){if(zi<0||zi>=int(zones.size()))return;
   // The original scans past ten border words into the next zone until -1;
@@ -39,7 +46,7 @@ inline Rings rings(const nlohmann::json&level,const std::vector<float>&brightnes
  fill(zone,0);if(zoneOnly)return r;
  if(zone>=0&&zone<int(zones.size()))for(const auto&value:zones[zone]["edgeList"]){int ei=value;if(ei<0)break;if(ei>=int(level["edges"].size()))continue;auto&e=level["edges"][ei];int join=e.value("join",-1);if(join>=0)fill(join,32);else{int s=sector(x,z,int16_t(x-e["dz"].get<int>()),int16_t(z+e["dx"].get<int>()),sine);if(s>=0)r[32+s]=r[48+s]=48;}}
  for(int b:{0,16,32,48})tween(r,b);
- for(int i=0;i<16;++i){int bottom=int8_t(((48-int(r[32+i]))>>1)-r[i]),top=int8_t(((48-int(r[48+i]))>>1)-r[16+i]);r[i]=int8_t(-std::min(0,bottom));r[16+i]=int8_t(-std::min(0,top));}return r;
+ if(!preCombine)combine(r);return r;
 }
 inline PolyTable polygon(const Rings&r){
  PolyTable result{};for(int column=0,sector=8;column<16;++column,sector=(sector-1)&15){
