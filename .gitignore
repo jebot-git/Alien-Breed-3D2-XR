@@ -17,3 +17,9 @@ ab3d2_source/listing.txt
 /native/tools/__pycache__/
 
 /native/render/tests/__pycache__/
+
+/build-standalone/
+
+/dist/
+
+__pycache__/

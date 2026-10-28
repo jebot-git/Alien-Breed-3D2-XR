@@ -1,0 +1,15 @@
+{
+  "project": "Alien-Breed-3D2-XR",
+  "package": "alien-breed3d2-xr",
+  "version": "0.1.0.20261028",
+  "arch_dependencies": [
+    "sdl2",
+    "openxr",
+    "libglvnd",
+    "libx11",
+    "glew",
+    "libpng",
+    "zlib"
+  ],
+  "cmake_options": []
+}

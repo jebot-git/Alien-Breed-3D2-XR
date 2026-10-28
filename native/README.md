@@ -1,5 +1,7 @@
 # Native Alien Breed 3D II XR
 
+Standalone Ubuntu, Fedora, Arch and Windows packaging: [release instructions](packaging/standalone/README.md).
+
 The game is native C++20. Its CMake build and installed executable use no JVM,
 Java UI, Gradle or Java libraries. The active `domed-native-openxr` branch is
 based on the maintained original Amiga history; the earlier Java experiment

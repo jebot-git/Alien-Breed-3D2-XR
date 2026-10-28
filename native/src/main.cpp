@@ -8,6 +8,7 @@
 #include "runtime.hpp"
 #include "xr.hpp"
 #include <GL/glew.h>
+#include "openxr_video.hpp"
 #include <SDL.h>
 #include <algorithm>
 #include <filesystem>
@@ -76,17 +77,27 @@ Options options(int argc, char **argv) {
   return out;
 }
 fs::path stateRoot() {
+#ifdef _WIN32
+  char *path = SDL_GetPrefPath("de-xr", "alien-breed3d2-xr");
+  if (!path) throw std::runtime_error("Cannot locate user data directory");
+  fs::path result = fs::u8path(path);
+  SDL_free(path);
+  return result;
+#else
   if (const char *root = std::getenv("XDG_STATE_HOME"))
     return fs::path(root) / "alien-breed3d2-xr";
   if (const char *home = std::getenv("HOME"))
     return fs::path(home) / ".local/state/alien-breed3d2-xr";
   return fs::temp_directory_path() / "alien-breed3d2-xr";
+#endif
 }
 fs::path configPath() {
+#ifndef _WIN32
   if (const char *root = std::getenv("XDG_CONFIG_HOME"))
     return fs::path(root) / "alien-breed3d2-xr/settings.json";
   if (const char *home = std::getenv("HOME"))
     return fs::path(home) / ".config/alien-breed3d2-xr/settings.json";
+#endif
   return stateRoot() / "settings.json";
 }
 nlohmann::json readJson(const fs::path &path) {
@@ -102,10 +113,9 @@ fs::path assetsPath(const Options &opt, const char *argv0) {
     return fs::absolute(opt.assets);
   if (const char *root = std::getenv("AB3D2_XR_ASSETS"))
     return root;
-  std::error_code ec;
-  auto exe = fs::read_symlink("/proc/self/exe", ec);
-  if (ec)
-    exe = fs::absolute(argv0);
+  char *base = SDL_GetBasePath();
+  auto exe = base ? fs::u8path(base) / fs::u8path(argv0).filename() : fs::absolute(argv0);
+  SDL_free(base);
   for (auto root :
        {exe.parent_path() / "assets",
         exe.parent_path() / "../share/alien-breed3d2-xr",
@@ -117,7 +127,7 @@ fs::path assetsPath(const Options &opt, const char *argv0) {
 void windowIcon(SDL_Window *window, const fs::path &path) {
   png_image image{};
   image.version = PNG_IMAGE_VERSION;
-  if (!png_image_begin_read_from_file(&image, path.c_str())) {
+  if (!png_image_begin_read_from_file(&image, path.string().c_str())) {
     std::cerr << "Window icon unavailable: " << path << "\n";
     return;
   }
@@ -228,6 +238,8 @@ int main(int argc, char **argv) {
               (opt.mode == "auto" && (launch.managed ? launch.xr : true));
     if (opt.x11 && launch.managed)
       vr = false;
+    xr_platform::selectVideo(vr);
+    SDL_SetMainReady();
     if (opt.x11)
       SDL_setenv("SDL_VIDEODRIVER", "x11", 1);
     else if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("WAYLAND_DISPLAY"))

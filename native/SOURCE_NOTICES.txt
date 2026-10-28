@@ -15,3 +15,8 @@ https://github.com/guillaumemonet/ab3d2-tkg-rebirth
 Original authors retain their credits. No additional license is asserted over
 original game code, data, third-party reference code or artwork. Original disks,
 extracted media, developer reference states and toolchains are not committed.
+
+Standalone Linux packages use distribution OpenXR/OpenGL/SDL libraries.
+Windows ZIPs include the generic MSYS2 OpenXR loader, SDL2, GLEW, PNG/zlib and
+compiler runtimes with notices under share/licenses/windows-libraries.
+No DomeD service, WiVRn-Pro build, JVM or Amiga executable runs at game startup.

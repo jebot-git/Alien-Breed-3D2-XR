@@ -3,10 +3,14 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <fstream>
+#include <iterator>
 namespace ab3d2::gpu {
 Image png(const std::filesystem::path &path){
     png_image file{};file.version=PNG_IMAGE_VERSION;
-    if(!png_image_begin_read_from_file(&file,path.c_str()))throw std::runtime_error("Cannot read original PNG: "+path.string());
+    std::ifstream input(path, std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(input)), {});
+    if(bytes.empty() || !png_image_begin_read_from_memory(&file,bytes.data(),bytes.size()))throw std::runtime_error("Cannot read original PNG: "+path.string());
     file.format=PNG_FORMAT_RGBA;Image result;result.width=file.width;result.height=file.height;result.pixels.resize(PNG_IMAGE_SIZE(file));
     if(!png_image_finish_read(&file,nullptr,result.pixels.data(),0,nullptr)){std::string error=file.message;png_image_free(&file);throw std::runtime_error(error+": "+path.string());}
     png_image_free(&file);return result;
