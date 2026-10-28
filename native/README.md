@@ -49,7 +49,8 @@ hand; it changes physical aiming only. Original weapon meshes, animation,
 ammunition, spread, damage and fire delay remain authoritative. A short,
 depth-tested laser and shot origin share the calibrated original muzzle.
 
-Left menu opens the overlaid pause menu: resume, turn mode, save/load,
+Either thumbstick navigates menus, including gradual deflections and held-stick
+repeat. Trigger or A/X selects. Left menu opens the overlaid pause menu: resume, turn mode, save/load,
 floor/height reset, two-hand support, audio, restart and quit. Resume requires
 neutral input before accepting movement/fire. Losing XR focus pauses play.
 Original level narratives, title art and paginated ending are included.
