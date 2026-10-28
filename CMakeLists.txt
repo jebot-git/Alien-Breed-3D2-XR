@@ -110,3 +110,14 @@ endif()
 add_executable(ab3d2-menu-input-test native/tests/menu-input.cpp)
 target_include_directories(ab3d2-menu-input-test PRIVATE native/include)
 add_test(NAME NativeMenuGradualStick COMMAND ab3d2-menu-input-test)
+# Optional original-data regression. No extractor, JVM or data download runs.
+set(AB3D2_ORIGINAL_LEVELS "${CMAKE_SOURCE_DIR}/medias/original/levels" CACHE PATH "Local uncompressed original retail levels for content audit")
+if(EXISTS "${AB3D2_ORIGINAL_LEVELS}/LEVEL_A/twolev.bin" AND EXISTS "${CMAKE_SOURCE_DIR}/assets/native/manifest.json")
+ find_package(Python3 QUIET COMPONENTS Interpreter)
+ if(Python3_Interpreter_FOUND)
+  add_test(NAME NativeOriginalContent COMMAND ${Python3_EXECUTABLE}
+   ${CMAKE_SOURCE_DIR}/native/render/tests/content-audit.py ${CMAKE_SOURCE_DIR}/assets
+   ${AB3D2_ORIGINAL_LEVELS} ${CMAKE_BINARY_DIR}/original-content-audit.json)
+ endif()
+endif()
+install(FILES native/render/ORIGINAL_CONTENT_AND_LIGHTING.txt DESTINATION ${CMAKE_INSTALL_DOCDIR})
