@@ -147,13 +147,15 @@ void windowIcon(SDL_Window *window, const fs::path &path) {
 struct Window {
   SDL_Window *window = nullptr;
   SDL_GLContext context = nullptr;
-  Window(bool vr) {
+  void create(bool vr, XrVersion version) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
       throw std::runtime_error(SDL_GetError());
     SDL_SetHint("SDL_APP_ID", "alien-breed3d2-xr");
     SDL_SetHint("SDL_VIDEO_WAYLAND_WMCLASS", "alien-breed3d2-xr");
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    std::cerr << "Requesting OpenGL " << XR_VERSION_MAJOR(version) << "."
+              << XR_VERSION_MINOR(version) << " core context\n";
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, XR_VERSION_MAJOR(version));
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, XR_VERSION_MINOR(version));
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
                         SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -165,7 +167,9 @@ struct Window {
       throw std::runtime_error(SDL_GetError());
     context = SDL_GL_CreateContext(window);
     if (!context)
-      throw std::runtime_error(SDL_GetError());
+      throw std::runtime_error("Cannot create OpenGL " +
+          std::to_string(XR_VERSION_MAJOR(version)) + "." +
+          std::to_string(XR_VERSION_MINOR(version)) + ": " + SDL_GetError());
     glewExperimental = GL_TRUE;
     auto error = glewInit();
     if (error != GLEW_OK && !GLEW_VERSION_3_3)
@@ -174,6 +178,7 @@ struct Window {
     }
     SDL_GL_SetSwapInterval(vr ? 0 : 1);
     std::cerr << "Native renderer: " << glGetString(GL_RENDERER)
+              << "; OpenGL=" << glGetString(GL_VERSION)
               << "; video=" << SDL_GetCurrentVideoDriver() << "\n";
   }
   ~Window() {
@@ -245,7 +250,21 @@ int main(int argc, char **argv) {
     else if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("WAYLAND_DISPLAY"))
       SDL_setenv("SDL_VIDEODRIVER", "wayland", 0);
     tempest::DomeLink dome(launch);
-    Window surface(vr);
+    Window surface;
+    std::unique_ptr<XR> xr;
+    bool lease = false;
+    XrVersion glVersion = XR_MAKE_VERSION(3, 3, 0);
+    if (vr) {
+      if (launch.managed) {
+        dome.begin();
+        lease = true;
+      }
+      xr = std::make_unique<XR>();
+      glVersion = xr->prepare();
+    }
+    surface.create(vr, glVersion);
+    if (xr)
+      xr->initialize(surface.window);
     windowIcon(surface.window, assetsPath(opt, argv[0]) / "icon.png");
     Runtime game(assetsPath(opt, argv[0]));
     game.loadLevel(opt.level);
@@ -268,16 +287,6 @@ int main(int argc, char **argv) {
     }
     bool sound = !opt.noSound && preferences.value("sound", true);
     audio::setEnabled(sound);
-    std::unique_ptr<XR> xr;
-    bool lease = false;
-    if (vr) {
-      if (launch.managed) {
-        dome.begin();
-        lease = true;
-      }
-      xr = std::make_unique<XR>();
-      xr->initialize(surface.window);
-    }
     enum Page { Title, Story, Play, Result, Ending, Credits };
     Page page = opt.testPlay ? Play : Title;
     bool paused = false, quit = false, armed = opt.testPlay,

@@ -26,6 +26,8 @@ public:
   ~XR();
   XR(const XR &) = delete;
   XR &operator=(const XR &) = delete;
+  // Query the runtime before creating the GL context; returns the required version.
+  XrVersion prepare();
   void initialize(SDL_Window *);
   bool beginFrame();
   void endFrame(const std::function<void(const XrView &, int, int, int)> &draw);

@@ -73,3 +73,26 @@ symbols, so the loader is rebuilt from the checksum-pinned upstream source.
 The runtime validator requires Python `pefile` (installed in the Windows builder
 image). Run `python3 windows-runtime.py /path/to/extracted/bin` to audit an
 existing ZIP after extraction; do not rely on a Wine exit code alone.
+
+### OpenXR OpenGL requirements
+
+XR startup queries the selected runtime before creating the OpenGL core context.
+It requests the greater of the renderer's OpenGL 3.3 minimum and the runtime's
+minimum, then validates the actual context. Desktop mode still requests 3.3 and
+does not require an XR runtime. The runtime's highest tested OpenGL version is
+advisory, as specified by `XR_KHR_opengl_enable`; a newer compatible context is
+passed to `xrCreateSession` for validation. Logs include the requested/actual GL
+version, runtime name, minimum and highest tested version. If the driver cannot
+create the required context, startup reports the requested version and SDL error.
+
+Development regression checks cover a 4.5 runtime minimum, a context newer than
+the runtime's tested maximum, and an unavailable 9.9 context, using an isolated
+mock runtime without contacting a headset.
+
+`native/tests/check-windows-xr.py --archive ZIP --mock TEST_DLL --output NEW_DIR`
+checks the packaged executable in a private Wine/Xvfb session with WGL. Compile
+`native/tests/mock-openxr.cpp` as a shared MinGW DLL using the same compiler as
+the release (`-std=c++20 -O2 -shared -DNOMINMAX -DWIN32_LEAN_AND_MEAN`, OpenXR
+headers and `-lopengl32 -lgdi32`). The DLL is test-only and is never packaged.
+Use `--previous OLD_ZIP` to also reproduce the earlier version rejection.
+Wine/mock checks do not replace testing on the user's Windows headset runtime.

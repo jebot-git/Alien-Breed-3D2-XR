@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: MIT
 // Test-only API runtime adapted from de-xr Comic Chat's isolated mock.
 // LD_PRELOAD applies only to the test child; no system runtime is contacted.
+#ifdef _WIN32
+#define XR_USE_PLATFORM_WIN32
+#include <windows.h>
+#include <unknwn.h>
+#else
 #define XR_USE_PLATFORM_EGL
+#include <EGL/egl.h>
+#endif
 #define XR_USE_GRAPHICS_API_OPENGL
 #define GL_GLEXT_PROTOTYPES
-#include <EGL/egl.h>
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <openxr/openxr.h>
@@ -29,9 +37,16 @@ unsigned frame = 0;
 auto frameStart=std::chrono::steady_clock::now();
 int pollStage = 0, stereoFrames = 0;
 XrPosef tracked(int) { return {{0, 0, 0, 1}, {0, 1.6f, 0}}; }
+XrVersion glRequirement(const char *name, unsigned major, unsigned minor) {
+    if (const char *value = std::getenv(name))
+        std::sscanf(value, "%u.%u", &major, &minor);
+    return XR_MAKE_VERSION(major, minor, 0);
+}
 XrResult requirements(XrInstance, XrSystemId, XrGraphicsRequirementsOpenGLKHR *out) {
-    out->minApiVersionSupported = XR_MAKE_VERSION(3, 3, 0);
-    out->maxApiVersionSupported = XR_MAKE_VERSION(4, 6, 0);
+    if (std::getenv("DE_XR_TEST_PREPARE_GL") && glGetString(GL_VERSION))
+        return XR_ERROR_VALIDATION_FAILURE;
+    out->minApiVersionSupported = glRequirement("DE_XR_TEST_GL_MIN", 3, 3);
+    out->maxApiVersionSupported = glRequirement("DE_XR_TEST_GL_MAX", 4, 6);
     return XR_SUCCESS;
 }
 void state(XrEventDataBuffer *out, XrSessionState state) {
@@ -44,9 +59,13 @@ void state(XrEventDataBuffer *out, XrSessionState state) {
 extern "C" {
 XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char *, uint32_t capacity,
     uint32_t *count, XrExtensionProperties *out) {
-    const char *names[] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_MNDX_EGL_ENABLE_EXTENSION_NAME,
+    const char *names[] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, "XR_MNDX_egl_enable",
                           "XR_FB_touch_controller_pro"};
+#ifdef _WIN32
+    *count = 1;
+#else
     *count = std::getenv("DE_XR_TEST_GLX") ? 1 : std::getenv("DE_XR_TEST_GENERIC") ? 2 : 3;
+#endif
     if (!capacity) return XR_SUCCESS;
     if (capacity < *count) return XR_ERROR_SIZE_INSUFFICIENT;
     for (uint32_t i = 0; i < *count; ++i) {
@@ -86,9 +105,22 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystem(XrInstance, const XrSystemGetInfo *, 
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreateInfo *info, XrSession *out) {
+#ifdef _WIN32
+    auto binding = static_cast<const XrGraphicsBindingOpenGLWin32KHR *>(info->next);
+    if (!binding || binding->type != XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR ||
+        binding->hGLRC != wglGetCurrentContext() || binding->hDC != wglGetCurrentDC())
+        return XR_ERROR_GRAPHICS_DEVICE_INVALID;
+#else
     auto binding = static_cast<const XrGraphicsBindingEGLMNDX *>(info->next);
     if (!binding || (binding->type != XR_TYPE_GRAPHICS_BINDING_EGL_MNDX &&
         !(std::getenv("DE_XR_TEST_GLX") && binding->type == XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR)))
+        return XR_ERROR_GRAPHICS_DEVICE_INVALID;
+#endif
+    // The runtime independently checks the context, rather than trusting the app.
+    int major = 0, minor = 0;
+    glGetIntegerv(0x821B, &major); // GL_MAJOR_VERSION (also for Win32 GL 1.1 headers)
+    glGetIntegerv(0x821C, &minor);
+    if (XR_MAKE_VERSION(major, minor, 0) < glRequirement("DE_XR_TEST_GL_MIN", 3, 3))
         return XR_ERROR_GRAPHICS_DEVICE_INVALID;
     *out = reinterpret_cast<XrSession>(2);
     return XR_SUCCESS;

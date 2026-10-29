@@ -173,3 +173,14 @@ if(DE_XR_STANDALONE AND TARGET ab3d2-mock-openxr)
   set_tests_properties(standalone-generic-openxr PROPERTIES RUN_SERIAL TRUE)
  endif()
 endif()
+
+# Query graphics requirements before context creation, tolerate newer compatible GL.
+if(TARGET ab3d2-mock-openxr AND EXISTS "${CMAKE_SOURCE_DIR}/assets/native/manifest.json")
+ foreach(mode gl-minimum gl-newer gl-unavailable)
+  add_test(NAME NativeXR-${mode} COMMAND ${CMAKE_COMMAND}
+  -DMOCK=$<TARGET_FILE:ab3d2-mock-openxr> -DAPP=$<TARGET_FILE:alien-breed3d2-xr>
+   -DASSETS=${CMAKE_SOURCE_DIR}/assets -DOUTPUT=${CMAKE_BINARY_DIR}/xr-${mode}-fixture -DMODE=${mode}
+  -P ${CMAKE_SOURCE_DIR}/native/tests/check-xr.cmake)
+  set_tests_properties(NativeXR-${mode} PROPERTIES RUN_SERIAL TRUE)
+ endforeach()
+endif()

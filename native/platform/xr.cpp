@@ -43,6 +43,8 @@ struct XR::Impl {
   Tracking tracking;
   SDL_Window *window = nullptr;
   bool frameOpen = false, renderFrame = false;
+  bool eglSupported = false;
+  XrVersion minGL = 0, maxGL = 0;
   XrTime displayTime = 0;
   std::array<XrView, 2> views{{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
   bool touchPro = false;
@@ -89,11 +91,10 @@ struct XR::Impl {
 };
 XR::XR() : p(std::make_unique<Impl>()) {}
 XR::~XR() = default;
-void XR::initialize(SDL_Window *window) {
-    auto &x = *p;
-    x.window = window;
-    xr_platform::Binding graphics(window);
-    bool useEgl = graphics.egl;
+XrVersion XR::prepare() {
+  auto &x = *p;
+  if (x.instance)
+    return std::max<XrVersion>(XR_MAKE_VERSION(3, 3, 0), x.minGL);
   uint32_t extensionCount = 0;
   XR_CHECK(xrEnumerateInstanceExtensionProperties(nullptr, 0, &extensionCount,
                                                   nullptr));
@@ -103,7 +104,10 @@ void XR::initialize(SDL_Window *window) {
       nullptr, extensionCount, &extensionCount, available.data()));
   std::vector<const char *> extensions{XR_KHR_OPENGL_ENABLE_EXTENSION_NAME};
 #ifndef _WIN32
-  if (useEgl)
+  x.eglSupported = std::any_of(available.begin(), available.end(), [](const auto &item) {
+    return std::strcmp(item.extensionName, XR_MNDX_EGL_ENABLE_EXTENSION_NAME) == 0;
+  });
+  if (x.eglSupported)
     extensions.push_back(XR_MNDX_EGL_ENABLE_EXTENSION_NAME);
 #endif
   x.touchPro =
@@ -132,15 +136,37 @@ void XR::initialize(SDL_Window *window) {
   XrGraphicsRequirementsOpenGLKHR requirements{
       XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR};
   XR_CHECK(requirementsFn(x.instance, x.system, &requirements));
+  x.minGL = requirements.minApiVersionSupported;
+  x.maxGL = requirements.maxApiVersionSupported;
+  return std::max<XrVersion>(XR_MAKE_VERSION(3, 3, 0), x.minGL);
+}
+void XR::initialize(SDL_Window *window) {
+  auto &x = *p;
+  prepare();
+  x.window = window;
+  xr_platform::Binding graphics(window);
+  if (graphics.egl && !x.eglSupported)
+    throw std::runtime_error("OpenXR runtime does not support the current EGL context");
   GLint major = 0, minor = 0;
   glGetIntegerv(GL_MAJOR_VERSION, &major);
   glGetIntegerv(GL_MINOR_VERSION, &minor);
   auto version = XR_MAKE_VERSION(major, minor, 0);
-  if (version < requirements.minApiVersionSupported ||
-      version > requirements.maxApiVersionSupported)
-    throw std::runtime_error(
-        "OpenGL version is outside the OpenXR runtime's supported range");
-XrSessionCreateInfo sessionInfo{XR_TYPE_SESSION_CREATE_INFO};
+  auto text = [](XrVersion value) {
+    return std::to_string(XR_VERSION_MAJOR(value)) + "." +
+           std::to_string(XR_VERSION_MINOR(value));
+  };
+  std::cerr << "OpenXR " << x.runtime << ": OpenGL context " << text(version)
+            << ", runtime minimum " << text(x.minGL)
+            << ", highest tested " << text(x.maxGL) << '\n';
+  if (version < x.minGL)
+    throw std::runtime_error("OpenGL " + text(version) +
+        " is below the OpenXR runtime minimum " + text(x.minGL));
+  // XR_KHR_opengl_enable defines maxApiVersionSupported as the highest
+  // tested version, not a hard cap. Let xrCreateSession validate the binding.
+  if (version > x.maxGL)
+    std::cerr << "OpenGL context exceeds the runtime's highest tested version; "
+                 "trying the compatible context\n";
+  XrSessionCreateInfo sessionInfo{XR_TYPE_SESSION_CREATE_INFO};
   sessionInfo.next = graphics.get();
   sessionInfo.systemId = x.system;
   XR_CHECK(xrCreateSession(x.instance, &sessionInfo, &x.session));
